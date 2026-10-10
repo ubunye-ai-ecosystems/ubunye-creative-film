@@ -410,7 +410,7 @@ fn default_temp_dir() -> Option<PathBuf> {
     if cfg!(target_arch = "wasm32") {
         return None;
     }
-    Some(untitled_dir(&crate::temp_dir().join("FilmCraft Previews")))
+    Some(untitled_dir(&crate::temp_dir().join("Ubunye Film Previews")))
 }
 
 /// A fresh per-process folder for an unsaved project's previews under `root`.

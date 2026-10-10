@@ -8,7 +8,7 @@ version = "0.5.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.95"
-repository = "https://github.com/storytold/filmcraft"
+repository = "https://github.com/ubunye-ai-ecosystems/ubunye-creative-film"
 
 [workspace.dependencies]
 # internal

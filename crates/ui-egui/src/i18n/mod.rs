@@ -153,7 +153,7 @@ pub fn current() -> Language {
 
 /// Translate an English UI string into the current language (the `tl!` macro, for literals).
 pub fn t(text: &str) -> &str {
-    current().tr(text)
+    crate::brand::localize(current().tr(text))
 }
 
 /// Match a lowercased search query against both the source and the displayed label.
@@ -165,7 +165,7 @@ pub fn matches_query(text: &str, query: &str) -> bool {
 /// first column is that context); falls back to the context-free translation.
 pub fn tr_ctx<'a>(context: &str, text: &'a str) -> &'a str {
     let lang = current();
-    lang.catalog().and_then(|c| c.contextual(context, text)).unwrap_or_else(|| lang.tr(text))
+    crate::brand::localize(lang.catalog().and_then(|c| c.contextual(context, text)).unwrap_or_else(|| lang.tr(text)))
 }
 
 /// Fill `{name}` placeholders. Unknown placeholders are left as written.

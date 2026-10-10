@@ -490,6 +490,11 @@ PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
         [('crate::temp_dir().join("FilmCraft Previews")', f'crate::temp_dir().join("{NAME} Previews")')],
     ),
     (
+        # the demo project's name is shown in the header and the Project panel
+        "crates/engine/src/demo.rs",
+        [('Project::new("FilmCraft Demo")', f'Project::new("{NAME} Demo")')],
+    ),
+    (
         "crates/automation/src/server.rs",
         [
             ('"screenshot of the live FilmCraft window"', f'"screenshot of the live {NAME} window"'),
@@ -927,6 +932,7 @@ NO_HOOK = [
     "apps/filmcraft-web/web/index.html",
     "apps/filmcraft-web/src/api.rs",
     "crates/automation/src/server.rs",
+    "crates/engine/src/demo.rs",
     "packaging/macos/Info.plist.in",
     "packaging/windows/filmcraft.wxs",
     f"packaging/linux/{APP_ID}.desktop",

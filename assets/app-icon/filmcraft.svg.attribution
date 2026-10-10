@@ -1,8 +1,8 @@
 asset:        filmcraft.svg
-title:        FilmCraft app icon, canonical vector (owl with ear tufts)
-author:       Brandon Thomas (FilmCraft owner), for the FilmCraft project
-source:       original work (drawn by the owner in ArtCraft, then vectorised)
-license:      MIT OR Apache-2.0
+title:        Ubunye Film app icon, canonical vector (copy of ubunye/brand/assets/icon.svg)
+author:       Ubunye AI Ecosystems
+source:       original work (Ubunye AI Ecosystems artwork adapted from the ThabangVision logo; ubunye/brand/assets/icon.svg)
+license:      MIT OR Apache-2.0 (letter outline: OFL-1.1, DM Serif Display)
 license-file: assets/app-icon/LICENSE.txt
-added:        2026-10-02 by Claude (agent) for Brandon Thomas
-notes:        SVG traced at 2048 px with craftrules assets/logo-options/_tools/vectorize_tile.py from the owner's ArtCraft drawing (craftrules assets/app-icons/filmcraft/source.png). Three colours: ink #0b0b0c, paper #efe9dc, app colour #8b5cf6; 512 viewBox, rx=112. See assets/app-icon/README.md.
+added:        2026-10-11 by Claude (agent) for Thabang Mashinini-Sekgoto
+notes:        Rendered from ubunye/brand/assets/icon.svg by ubunye/brand/make_icons.py (resvg, Pillow for .ico/.icns) and copied here by ubunye/brand/apply.py. Ubunye AI Ecosystems artwork adapted from the ThabangVision logo, MIT OR Apache-2.0; letter outline from DM Serif Display (SIL OFL 1.1).
