@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   echo 'Usage: ./install.sh [--prefix /absolute/path]'
-  echo 'Installs FilmCraft and its desktop integration into ~/.local by default.'
+  echo 'Installs Ubunye Film and its desktop integration into ~/.local by default.'
   echo 'For all users: sudo ./install.sh --prefix /usr/local'
 }
 fail() { echo "error: $*" >&2; exit 1; }
@@ -25,7 +25,7 @@ prefix="$(realpath -m -- "$prefix")"
 [ "$prefix" != / ] || fail 'use /usr/local or a user directory, not /'
 source_dir="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)"
 case "$prefix/" in "$source_dir/"*) fail 'choose an installation prefix outside the extracted tarball' ;; esac
-app_id=ai.storyteller.filmcraft
+app_id=org.ubunye.creative.film
 for binary in filmcraft filmcraft-cli; do
   [ -f "$source_dir/bin/$binary" ] || fail "missing bin/$binary; extract the complete tarball first"
 done
@@ -59,7 +59,7 @@ fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache -q -t -f "$prefix/share/icons/hicolor" || echo 'warning: icon cache refresh failed' >&2
 fi
-printf 'Installed FilmCraft in %s\nLaunch it from the application menu or run "%s/bin/filmcraft".\n' "$prefix" "$prefix"
+printf 'Installed Ubunye Film in %s\nLaunch it from the application menu or run "%s/bin/filmcraft".\n' "$prefix" "$prefix"
 case ":${PATH:-}:" in
   *":$prefix/bin:"*) ;;
   *) printf 'For terminal commands, add %s/bin to your PATH.\n' "$prefix" ;;

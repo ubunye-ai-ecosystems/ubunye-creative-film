@@ -217,7 +217,7 @@ jobs:
           dpkg-deb --info dist/release/*.deb
           dpkg-deb --contents dist/release/*.deb | grep -E 'usr/bin/filmcraft$|metainfo|applications'
           ldd target/release/filmcraft
-          python3 -c "import yaml; m = yaml.safe_load(open('packaging/linux/flatpak/ai.storyteller.filmcraft.yml')); assert m['id'] == 'ai.storyteller.filmcraft'"
+          python3 -c "import yaml; m = yaml.safe_load(open('packaging/linux/flatpak/org.ubunye.creative.film.yml')); assert m['id'] == 'org.ubunye.creative.film'"
           for appimage in dist/release/*.AppImage; do
             chmod +x "$appimage"
             APPIMAGE_EXTRACT_AND_RUN=1 "$appimage" --version
@@ -313,7 +313,7 @@ jobs:
             export CRAFT_FONTS_DIR="$PWD/craft-fonts" CRAFT_FONTS_REQUIRED=1
             bash packaging/freebsd/package.sh
             tar -tzf dist/release/filmcraft-*-freebsd-x86_64.tar.gz \
-              | grep -E '/bin/filmcraft$|/bin/filmcraft-cli$|/share/applications/ai\.storyteller\.filmcraft\.desktop$|/share/doc/filmcraft/LICENSE-MIT$'
+              | grep -E '/bin/filmcraft$|/bin/filmcraft-cli$|/share/applications/org\.ubunye\.creative\.film\.desktop$|/share/doc/filmcraft/LICENSE-MIT$'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-freebsd-x86_64

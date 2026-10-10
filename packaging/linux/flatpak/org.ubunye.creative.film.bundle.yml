@@ -10,9 +10,9 @@
 # ALSA routes through PulseAudio/PipeWire), and the GPU driver comes from its
 # org.freedesktop.Platform.GL extension.
 #
-# ai.storyteller.filmcraft.yml (same directory) is the from-source manifest for Flathub. Keep
+# org.ubunye.creative.film.yml (same directory) is the from-source manifest for Flathub. Keep
 # runtime-version and finish-args identical in both (packaging-lint checks this).
-id: ai.storyteller.filmcraft
+id: org.ubunye.creative.film
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
@@ -30,7 +30,7 @@ finish-args:
   - --device=dri
   # A project refers to its media by absolute path (docs/project-files.md), and the document
   # portal only exposes the file it was handed, not the media beside it: a project opened from
-  # ~/Videos found none of its clips (#107). So, as other video editors do, FilmCraft reads and
+  # ~/Videos found none of its clips (#107). So, as other video editors do, Ubunye Film reads and
   # writes the home directory (media, projects, exports, autosave next to the project) and the
   # usual mount points of external drives, where footage often lives. Open/Save dialogs still go
   # through the file-chooser portal; nothing outside these locations is granted.
@@ -39,7 +39,7 @@ finish-args:
   - --filesystem=/run/media
   - --filesystem=/mnt
   # Deliberately not granted: network (the optional --control server listens on 127.0.0.1 in
-  # the sandbox; `flatpak override --user --share=network ai.storyteller.filmcraft` exposes it
+  # the sandbox; `flatpak override --user --share=network org.ubunye.creative.film` exposes it
   # to host agents) and host-wide filesystem access.
 modules:
   - name: filmcraft
@@ -47,12 +47,12 @@ modules:
     build-commands:
       - install -Dm755 bin/filmcraft /app/bin/filmcraft
       - install -Dm755 bin/filmcraft-cli /app/bin/filmcraft-cli
-      - install -Dm644 share/applications/ai.storyteller.filmcraft.desktop /app/share/applications/ai.storyteller.filmcraft.desktop
+      - install -Dm644 share/applications/org.ubunye.creative.film.desktop /app/share/applications/org.ubunye.creative.film.desktop
       # The same MIME file the deb/rpm install (no types of its own yet; the runtime's
       # shared-mime-info already knows the video and audio formats).
-      - install -Dm644 share/mime/packages/ai.storyteller.filmcraft.xml /app/share/mime/packages/ai.storyteller.filmcraft.xml
+      - install -Dm644 share/mime/packages/org.ubunye.creative.film.xml /app/share/mime/packages/org.ubunye.creative.film.xml
       # Already has the release's version and date substituted by package.sh.
-      - install -Dm644 share/metainfo/ai.storyteller.filmcraft.metainfo.xml /app/share/metainfo/ai.storyteller.filmcraft.metainfo.xml
+      - install -Dm644 share/metainfo/org.ubunye.creative.film.metainfo.xml /app/share/metainfo/org.ubunye.creative.film.metainfo.xml
       - mkdir -p /app/share/icons /app/share/doc && cp -R share/icons/hicolor /app/share/icons/ && cp -R share/doc/filmcraft /app/share/doc/
     sources:
       - type: dir

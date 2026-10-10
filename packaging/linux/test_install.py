@@ -12,7 +12,7 @@ import unittest
 
 
 HERE = Path(__file__).resolve().parent
-APP_ID = "ai.storyteller.filmcraft"
+APP_ID = "org.ubunye.creative.film"
 
 
 class InstallTests(unittest.TestCase):
@@ -112,7 +112,7 @@ class InstallTests(unittest.TestCase):
         binaries.mkdir(parents=True)
         for name in ("filmcraft", "filmcraft-cli"):
             binary = binaries / name
-            binary.write_text("#!/bin/sh\necho 'FilmCraft fixture'\n")
+            binary.write_text("#!/bin/sh\necho 'Ubunye Film fixture'\n")
             binary.chmod(0o755)
         dist = self.root / "dist"
         result = subprocess.run(

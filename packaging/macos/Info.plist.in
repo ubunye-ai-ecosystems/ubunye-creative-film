@@ -7,13 +7,13 @@
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>FilmCraft</string>
+  <string>Ubunye Film</string>
   <key>CFBundleName</key>
-  <string>FilmCraft</string>
+  <string>Ubunye Film</string>
   <key>CFBundleExecutable</key>
-  <string>FilmCraft</string>
+  <string>Ubunye Film</string>
   <key>CFBundleIdentifier</key>
-  <string>ai.storyteller.filmcraft</string>
+  <string>org.ubunye.creative.film</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundlePackageType</key>
@@ -29,7 +29,7 @@
   <key>FilmCraftBuildCommit</key>
   <string>@BUILD_SHA@</string>
   <key>CFBundleIconFile</key>
-  <string>FilmCraft</string>
+  <string>Ubunye Film</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.video</string>
   <!-- Must match MACOSX_DEPLOYMENT_TARGET in package.sh. Big Sur is the first release on
@@ -43,23 +43,23 @@
   <key>NSRequiresAquaSystemAppearance</key>
   <false/>
   <key>NSHumanReadableCopyright</key>
-  <string>Copyright © the FilmCraft authors. MIT OR Apache-2.0.</string>
+  <string>Copyright © the FilmCraft authors and Ubunye AI Ecosystems. MIT OR Apache-2.0.</string>
 
   <!-- Filmcraft's own format. -->
   <key>UTExportedTypeDeclarations</key>
   <array>
     <dict>
       <key>UTTypeIdentifier</key>
-      <string>ai.storyteller.filmcraft.project</string>
+      <string>org.ubunye.creative.film.document</string>
       <key>UTTypeDescription</key>
-      <string>FilmCraft Project</string>
+      <string>Ubunye Film Project</string>
       <key>UTTypeConformsTo</key>
       <array>
         <string>public.data</string>
         <string>public.json</string>
       </array>
       <key>UTTypeIconFile</key>
-      <string>FilmCraft</string>
+      <string>Ubunye Film</string>
       <key>UTTypeTagSpecification</key>
       <dict>
         <key>public.filename-extension</key>

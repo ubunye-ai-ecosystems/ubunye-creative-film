@@ -55,4 +55,4 @@ jobs:
             export CARGO_TARGET_DIR=/var/tmp/filmcraft-target CARGO_BUILD_JOBS=4
             bash packaging/freebsd/package.sh
             tar -tzf dist/release/filmcraft-*-freebsd-x86_64.tar.gz \
-              | grep -E '/bin/filmcraft$|/bin/filmcraft-cli$|/share/applications/ai\.storyteller\.filmcraft\.desktop$|/share/doc/filmcraft/LICENSE-MIT$'
+              | grep -E '/bin/filmcraft$|/bin/filmcraft-cli$|/share/applications/org\.ubunye\.creative\.film\.desktop$|/share/doc/filmcraft/LICENSE-MIT$'
