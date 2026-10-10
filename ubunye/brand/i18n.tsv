@@ -1,0 +1,25 @@
+# Ubunye interface strings, applied to upstream's catalogs (crates/ui-egui/src/i18n/<lang>.tsv) by
+# ubunye/brand/apply.py. Columns, separated by a TAB:  lang <TAB> English source <TAB> translation
+# Upstream rows that these replace are listed in apply.py (LOCALE_RENAMES). "FilmCraft" is kept in
+# keys and translations on purpose: brand::localize shows it as the product name at run time. pt-br and uk carry menu labels only (their catalogs may hold nothing else).
+es	Join the Ubunye Community…	Únete a la comunidad Ubunye…
+es	Join the Ubunye Community	Únete a la comunidad Ubunye
+es	ThabangVision Website	Sitio web de ThabangVision
+es	FilmCraft on thabangvision.com	FilmCraft en thabangvision.com
+es	A clean-room, pure-Rust non-linear video editor.	Un editor de video no lineal en Rust puro, desarrollado en sala limpia.
+ja	Join the Ubunye Community…	Ubunye コミュニティに参加…
+ja	Join the Ubunye Community	Ubunye コミュニティに参加
+ja	ThabangVision Website	ThabangVision の Web サイト
+ja	FilmCraft on thabangvision.com	thabangvision.com の FilmCraft
+ja	A clean-room, pure-Rust non-linear video editor.	Rust だけで書かれた、クリーンルーム設計のノンリニアビデオ編集ソフトです。
+zh-cn	Join the Ubunye Community…	加入 Ubunye 社区…
+zh-cn	Join the Ubunye Community	加入 Ubunye 社区
+zh-cn	ThabangVision Website	ThabangVision 官网
+zh-cn	FilmCraft on thabangvision.com	thabangvision.com 上的 FilmCraft
+zh-cn	A clean-room, pure-Rust non-linear video editor.	一款净室实现的纯 Rust 非线性视频编辑器。
+pt-br	Join the Ubunye Community…	Entre na comunidade Ubunye…
+pt-br	ThabangVision Website	Site da ThabangVision
+pt-br	FilmCraft on thabangvision.com	FilmCraft em thabangvision.com
+uk	Join the Ubunye Community…	Приєднатися до спільноти Ubunye…
+uk	ThabangVision Website	Вебсайт ThabangVision
+uk	FilmCraft on thabangvision.com	FilmCraft на thabangvision.com
