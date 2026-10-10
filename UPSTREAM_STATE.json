@@ -1,0 +1,32 @@
+{
+  "$schema_version": 1,
+  "app": "ubunye-creative-film",
+  "upstream": {
+    "name": "FilmCraft",
+    "url": "https://github.com/storytold/filmcraft.git",
+    "branch": "main",
+    "license": "MIT OR Apache-2.0"
+  },
+  "last_checked_at": "2026-10-10T17:09:24Z",
+  "last_integrated": {
+    "sha": "98ba9acbcedcbb630ba2a07b782176b66835edd2",
+    "date": "2026-10-10T08:35:25-04:00",
+    "upstream_version": "0.5.0",
+    "upstream_tag": "v0.5.0",
+    "method": "initial-import",
+    "merged_pr": null,
+    "merged_by": null,
+    "merged_at": null
+  },
+  "pending": null,
+  "history": [
+    {
+      "sha": "98ba9acbcedcbb630ba2a07b782176b66835edd2",
+      "outcome": "initial-import",
+      "commits": 1098,
+      "conflicts": 0,
+      "ci": "not-run",
+      "recorded_at": "2026-10-10T17:09:24Z"
+    }
+  ]
+}

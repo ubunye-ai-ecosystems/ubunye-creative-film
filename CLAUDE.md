@@ -1,3 +1,5 @@
+> **Ubunye fork:** read [`ubunye/CLAUDE.md`](ubunye/CLAUDE.md) first; its rules take precedence.
+
 # FilmCraft — instructions for agents
 
 FilmCraft is a clean-room, open-source, pure-Rust non-linear video editor targeting Adobe Premiere Pro parity (and beyond). Native on macOS, Windows, Linux; web via WASM. Sibling of `../photocraft` (Photoshop), `../pdfcraft` (Acrobat) and `../vectorcraft` (Illustrator; formerly DrawCraft), with the same conventions.

@@ -1,3 +1,5 @@
+> **Ubunye fork:** read [`ubunye/CLAUDE.md`](ubunye/CLAUDE.md) first; its rules take precedence.
+
 # FilmCraft — rules for agents and contributors
 
 These rules apply to every human and AI contributor. `CLAUDE.md` holds the working instructions; this

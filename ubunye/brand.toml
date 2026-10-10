@@ -1,0 +1,31 @@
+# Ubunye identity for Ubunye Creative Film. Single source of truth for Milestone 4 (branding).
+# Values are not wired into the build yet; branding changes start only after brand-kit approval.
+[product]
+name = "Ubunye Creative Film"
+short_name = "Film"
+slug = "ubunye-creative-film"
+suite = "Ubunye Creative Studio"
+vendor = "Ubunye AI Ecosystems"
+description = "Video editing, colour and sound"
+based_on = "Based on FilmCraft by the ArtCraft team (https://github.com/storytold/filmcraft), used under MIT OR Apache-2.0."
+
+[identifiers]
+app_id = "org.ubunye.creative.film"                         # macOS bundle id, Linux app id, Flatpak id
+document_uti = "org.ubunye.creative.film.document"
+windows_upgrade_code = "920776E7-7682-4688-8E8B-B25A5CAB0BF4"         # generated for Ubunye; never reuse upstream's GUID
+env_prefix = "UBUNYE_FILM"                    # replaces upstream's FILMCRAFT_* variables
+config_dir = "ubunye-creative-film"
+
+[links]
+homepage = "https://thabangvision.com/studio/film"
+downloads = "https://downloads.thabangvision.com/film/"
+web_app = "https://film.studio.thabangvision.com/"
+source = "https://github.com/ubunye-ai-ecosystems/ubunye-creative-film"
+issues = "https://github.com/ubunye-ai-ecosystems/ubunye-creative-film/issues"
+update_manifest = "https://downloads.thabangvision.com/manifests/film/stable.json"
+
+[upstream_identity_to_replace]
+names = ["FilmCraft", "ArtCraft"]
+app_id = "ai.storyteller.filmcraft"
+vendor = "Learning Machines LLC"
+links = ["getartcraft.com", "discord.gg/artcraft", "github.com/storytold/filmcraft"]
