@@ -53,16 +53,10 @@ jobs:
       - run: cargo xtask ci
 
   brand-leak:
-    # Informational until Milestone 4, then remove continue-on-error.
+    # Blocking since the rebrand was applied (ubunye/REBRANDING.md).
     runs-on: ubuntu-24.04
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: Upstream identity outside allow-listed files
-        run: |
-          set +e
-          git grep -n -I -E 'ArtCraft|getartcraft|ai\.storyteller|Learning Machines|storytold' -- \
-            ':!LICENSE*' ':!NOTICE' ':!**/ATTRIBUTION*' ':!UPSTREAM*' ':!ubunye/**' ':!docs/brand/**' ':!**/credits.rs' \
-            > leaks.txt
-          echo "leaks: $(wc -l < leaks.txt) lines in $(cut -d: -f1 leaks.txt | sort -u | wc -l) files" | tee -a "$GITHUB_STEP_SUMMARY"
-          test ! -s leaks.txt
+      - name: Rebrand applied, no upstream identity leaks
+        shell: bash  # -eo pipefail, so tee keeps the exit status
+        run: python3 -I ubunye/brand/apply.py --check | tee -a "$GITHUB_STEP_SUMMARY"

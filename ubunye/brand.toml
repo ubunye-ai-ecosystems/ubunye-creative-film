@@ -1,28 +1,32 @@
-# Ubunye identity for Ubunye Creative Film. Single source of truth for Milestone 4 (branding).
-# Values are not wired into the build yet; branding changes start only after brand-kit approval.
+# Ubunye identity for Ubunye Film (repository ubunye-creative-film). Single source of truth for Milestone 4 (branding).
+# Applied 2026-10-11 by ubunye/brand/apply.py, whose identity block is the working copy of these
+# values (product name set in one place there; see ubunye/REBRANDING.md).
 [product]
-name = "Ubunye Creative Film"
+name = "Ubunye Film"
 short_name = "Film"
 slug = "ubunye-creative-film"
 suite = "Ubunye Creative Studio"
+distributor = "ThabangVision"
 vendor = "Ubunye AI Ecosystems"
 description = "Video editing, colour and sound"
+about = "Ubunye Film, part of Ubunye Creative Studio. Based on FilmCraft by the ArtCraft team"
 based_on = "Based on FilmCraft by the ArtCraft team (https://github.com/storytold/filmcraft), used under MIT OR Apache-2.0."
 
 [identifiers]
 app_id = "org.ubunye.creative.film"                         # macOS bundle id, Linux app id, Flatpak id
 document_uti = "org.ubunye.creative.film.document"
 windows_upgrade_code = "920776E7-7682-4688-8E8B-B25A5CAB0BF4"         # generated for Ubunye; never reuse upstream's GUID
-env_prefix = "UBUNYE_FILM"                    # replaces upstream's FILMCRAFT_* variables
-config_dir = "ubunye-creative-film"
+env_prefix = "FILMCRAFT"                      # kept as upstream (owner decision: merge cost); UBUNYE_FILM_ not introduced
+config_dir = "org.ubunye.creative.film"      # per-user data folder name on every OS (derived from app_id)
 
 [links]
-homepage = "https://thabangvision.com/studio/film"
+homepage = "https://www.thabangvision.com/tools/film"
 downloads = "https://downloads.thabangvision.com/film/"
 web_app = "https://film.studio.thabangvision.com/"
 source = "https://github.com/ubunye-ai-ecosystems/ubunye-creative-film"
 issues = "https://github.com/ubunye-ai-ecosystems/ubunye-creative-film/issues"
 update_manifest = "https://downloads.thabangvision.com/manifests/film/stable.json"
+appimage_zsync = "https://downloads.thabangvision.com/film/stable/ubunye-creative-film-linux-<arch>.AppImage.zsync"
 
 [upstream_identity_to_replace]
 names = ["FilmCraft", "ArtCraft"]
