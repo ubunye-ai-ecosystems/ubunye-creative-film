@@ -61,7 +61,7 @@ fn stdout_failed(e: std::io::Error) {
 }
 
 const HELP: &str = "\
-filmcraft-cli: drive FilmCraft from the shell (headless engine, or the live app with --bridge)
+filmcraft-cli: drive Ubunye Film from the shell (headless engine, or the live app with --bridge)
 
 USAGE
   filmcraft-cli [OPTIONS] <SUBCOMMAND> [ARGS]
@@ -102,7 +102,7 @@ OPTIONS
   --save                        save the project back to --project when done
   --save-as <p.fcproj>          save the project to this path when done
   --bridge <127.0.0.1:PORT>     send commands to the running app (`filmcraft --control PORT`)
-  --data-dir <dir>              FilmCraft data directory for user export presets (headless;
+  --data-dir <dir>              Ubunye Film data directory for user export presets (headless;
                                 default: the app's data directory)
   --keep-going                  `run`: report failing lines and continue
   --compact                     one-line JSON output
@@ -253,7 +253,7 @@ async fn main() {
 
 async fn cli() {
     if matches!(std::env::args().nth(1).as_deref(), Some("--version" | "-V")) {
-        outln!("filmcraft-cli {}", env!("CARGO_PKG_VERSION"));
+        outln!("filmcraft-cli {} (Ubunye Film)", env!("CARGO_PKG_VERSION"));
         return;
     }
     register_hardware_decoders();
@@ -268,7 +268,7 @@ async fn cli() {
     let Some(cmd) = a.pos(0) else { usage("missing subcommand") };
     match cmd {
         "help" | "-h" => out!("{HELP}"),
-        "version" => outln!("filmcraft-cli {}", env!("CARGO_PKG_VERSION")),
+        "version" => outln!("filmcraft-cli {} (Ubunye Film)", env!("CARGO_PKG_VERSION")),
         "probe" => {
             let path = a.pos(1).unwrap_or_else(|| usage("probe <media> [--image-sequence]"));
             match probe::probe(path, a.flag("--image-sequence")) {

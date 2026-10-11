@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and package FilmCraft for Linux (<arch> is x86_64 or aarch64):
+# Build and package Ubunye Film for Linux (<arch> is x86_64 or aarch64):
 #
 #   $DIST/filmcraft-<version>-linux-<arch>.AppImage  any distro with glibc >= the build host's
 #   $DIST/filmcraft-<version>-linux-<arch>.AppImage.zsync  delta updates (needs zsyncmake)
@@ -17,7 +17,7 @@ set -euo pipefail
 # shellcheck source=../env.sh
 . "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
 HERE="$ROOT/packaging/linux"
-APP_ID=ai.storyteller.filmcraft
+APP_ID=org.ubunye.creative.film
 
 SKIP_BUILD=0
 FORMATS="appimage deb rpm tar"
@@ -36,10 +36,10 @@ case "$ARCH" in
   aarch64 | arm64) ARCH=aarch64; DEB_ARCH=arm64 ;;
   *) echo "unsupported architecture $ARCH" >&2; exit 2 ;;
 esac
-export FILMCRAFT_MAINTAINER="${FILMCRAFT_MAINTAINER:-FilmCraft maintainers <filmcraft@storyteller.ai>}"
+export FILMCRAFT_MAINTAINER="${FILMCRAFT_MAINTAINER:-Ubunye AI Ecosystems <noreply@thabangvision.com>}"
 BASENAME="filmcraft-$VERSION-linux-$ARCH"
 
-echo "==> FilmCraft $VERSION for Linux $ARCH ($FORMATS)"
+echo "==> Ubunye Film $VERSION for Linux $ARCH ($FORMATS)"
 
 if [ "$SKIP_BUILD" = 0 ]; then
   (cd "$ROOT" && cargo build --release --locked -p filmcraft -p filmcraft-cli)
@@ -95,7 +95,7 @@ fi
 
 # ---- AppImage -----------------------------------------------------------------------------------
 if has appimage; then
-  APPDIR="$WORK/FilmCraft.AppDir"
+  APPDIR="$WORK/Ubunye Film.AppDir"
   cp -R "$STAGE" "$APPDIR"
   mv "$APPDIR/usr/share/doc" "$WORK/doc-unused"
   ln -s usr/bin/filmcraft "$APPDIR/AppRun"
@@ -119,11 +119,10 @@ if has appimage; then
   # A .zsync left by an earlier run would hide a missing zsyncmake and describe another file.
   rm -f "$OUT.zsync"
   # Update information: AppImageUpdate, AppImageLauncher and the like read it from the file and
-  # fetch only the blocks that changed in a newer release, through the .zsync published next to
-  # each AppImage on GitHub Releases. `latest` is the newest published release that is not a
-  # pre-release. A fork's builds point at its own releases through GITHUB_REPOSITORY.
-  REPO="${GITHUB_REPOSITORY:-storytold/filmcraft}"
-  UPDATE_INFO="gh-releases-zsync|${REPO%%/*}|${REPO#*/}|latest|filmcraft-*-linux-$ARCH.AppImage.zsync"
+  # fetch only the blocks that changed in a newer release, through the .zsync published on
+  # https://downloads.thabangvision.com/film/stable/ (Ubunye: never upstream's GitHub Releases). The release upload
+  # must publish the stable AppImage and its .zsync under these fixed names.
+  UPDATE_INFO="zsync|https://downloads.thabangvision.com/film/stable/ubunye-creative-film-linux-$ARCH.AppImage.zsync"
   # Extract-and-run: works without FUSE (containers, CI). The output embeds the static runtime,
   # so users don't need libfuse2 either. With zsyncmake on the host (CI installs the zsync
   # package) appimagetool also writes the .zsync, into its working directory, hence the cd.

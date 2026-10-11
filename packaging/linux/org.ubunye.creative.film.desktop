@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Ubunye Film
+GenericName=Video Editor
+Comment=Edit video, color and sound
+Exec=filmcraft %F
+TryExec=filmcraft
+Icon=org.ubunye.creative.film
+Terminal=false
+StartupNotify=true
+StartupWMClass=org.ubunye.creative.film
+Categories=AudioVideo;Video;AudioVideoEditing;
+Keywords=video;editor;film;timeline;color;grading;nle;

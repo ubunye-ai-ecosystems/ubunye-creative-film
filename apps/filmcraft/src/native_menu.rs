@@ -27,7 +27,7 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Sho
     let mut native: Vec<(String, MenuItem)> = Vec::new();
     let mut titles: Vec<(String, Submenu)> = Vec::new();
     let bar = Menu::new();
-    let app_menu = Submenu::new("FilmCraft", true);
+    let app_menu = Submenu::new(filmcraft_ui_egui::brand::NAME, true);
     // FilmCraft ▸ Settings ▸ <category> (Premiere's app-menu layout; General is Cmd+,)
     let settings = Submenu::new(app.ui.language.tr("Settings"), true);
     titles.push(("Settings".into(), settings.clone()));
@@ -38,8 +38,8 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Sho
         let _ = settings.append(&mi);
     }
     let _ = app_menu.append_items(&[
-        &MenuItem::with_id("app.about", "About FilmCraft", true, None),
-        &MenuItem::with_id("help.discord", "Join the ArtCraft Discord…", true, None),
+        &MenuItem::with_id("app.about", format!("About {}", filmcraft_ui_egui::brand::NAME), true, None),
+        &MenuItem::with_id("help.discord", "Join the Ubunye Community…", true, None),
         &PredefinedMenuItem::separator(),
         &settings,
         &PredefinedMenuItem::separator(),
@@ -57,7 +57,7 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Sho
         // their first item appears
         let mut subs: Vec<(Vec<String>, Submenu)> = Vec::new();
         for it in mine {
-            let mi = MenuItem::with_id(it.id.clone(), &it.label, true, it.shortcut.as_deref().and_then(accel));
+            let mi = MenuItem::with_id(it.id.clone(), filmcraft_ui_egui::brand::localize(&it.label), true, it.shortcut.as_deref().and_then(accel));
             native.push((it.id.clone(), mi.clone()));
             let mut parent = sub.clone();
             for depth in 1..it.path.len() {
@@ -111,7 +111,7 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Sho
         }
         for (id, mi) in &native {
             if let Some(it) = items.iter().find(|i| &i.id == id) {
-                mi.set_text(&it.label);
+                mi.set_text(filmcraft_ui_egui::brand::localize(&it.label));
                 let _ = mi.set_accelerator(it.shortcut.as_deref().and_then(accel));
             }
         }
