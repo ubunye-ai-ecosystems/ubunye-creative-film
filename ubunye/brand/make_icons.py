@@ -20,6 +20,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SVG = HERE / "assets" / "icon.svg"
+# Simplified icon (fewer, thicker rays, no glow) used at 32 px and below.
+SMALL = HERE / "assets" / "icon-small.svg"
 OUT = HERE / "generated"
 APP_ID = "org.ubunye.creative.film"
 HICOLOR = (16, 24, 32, 48, 64, 128, 256, 512)
@@ -31,6 +33,14 @@ def resvg() -> str:
         if cand and Path(cand).exists():
             return cand
     sys.exit("error: resvg not found (set RESVG or install it with cargo install resvg)")
+
+
+def source_hash() -> str:
+    h = hashlib.sha256()
+    for f in (SVG, SMALL):
+        if f.exists():
+            h.update(f.read_bytes().replace(b"\r\n", b"\n"))
+    return h.hexdigest()
 
 
 def render(tool: str, svg: Path, size: int, out: Path) -> None:
@@ -56,11 +66,11 @@ def main() -> None:
         mac = tmp / "mac.svg"
         mac.write_text(text.replace('viewBox="0 0 512 512"', 'viewBox="-62.14 -62.14 636.27 636.27"', 1), encoding="utf-8")
         shutil.copyfile(SVG, OUT / "filmcraft.svg")
-        shutil.copyfile(SVG, OUT / "filmcraft-small.svg")
+        shutil.copyfile(SMALL if SMALL.exists() else SVG, OUT / "filmcraft-small.svg")
         render(tool, SVG, 1024, OUT / "filmcraft-1024.png")
         render(tool, mac, 512, OUT / "filmcraft-macos-512.png")
         for s in HICOLOR:
-            render(tool, SVG, s, OUT / "hicolor" / f"{s}x{s}" / "apps" / f"{APP_ID}.png")
+            render(tool, SMALL if s <= 32 and SMALL.exists() else SVG, s, OUT / "hicolor" / f"{s}x{s}" / "apps" / f"{APP_ID}.png")
         scalable = OUT / "hicolor" / "scalable" / "apps" / f"{APP_ID}.svg"
         scalable.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(SVG, scalable)
@@ -69,7 +79,7 @@ def main() -> None:
         frames = []
         for s in ICO:
             p = tmp / f"ico-{s}.png"
-            render(tool, SVG, s, p)
+            render(tool, SMALL if s <= 32 and SMALL.exists() else SVG, s, p)
             frames.append(Image.open(p).convert("RGBA"))
         big = frames[-1]
         big.save(OUT / "filmcraft.ico", format="ICO", sizes=[(s, s) for s in ICO], append_images=frames[:-1])
@@ -78,7 +88,7 @@ def main() -> None:
         render(tool, mac, 1024, p)
         Image.open(p).convert("RGBA").save(OUT / "filmcraft.icns", format="ICNS")
     # The stamp apply.py compares with icon.svg to know the renders are current (LF-normalised).
-    digest = hashlib.sha256(SVG.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    digest = source_hash()
     (OUT / "SOURCE.sha256").write_text(digest + "\n", encoding="utf-8", newline="\n")
     print(f"icons written to {OUT}")
 

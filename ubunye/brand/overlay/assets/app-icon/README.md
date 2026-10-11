@@ -5,8 +5,8 @@ same paths, so upstream's build and packaging scripts pick it up unchanged.
 
 ## Source
 
-- Master artwork: `ubunye/brand/assets/icon.svg` (512-unit tile, `rx=112`), adapted from the
-  ThabangVision logo. The letters are outlines (from DM Serif Display, SIL OFL 1.1), so no font
+- Master artwork: `ubunye/brand/assets/icon.svg` (512-unit tile) from the Ubunye
+  Creative Studio brand system, plus `icon-small.svg` for 32 px and below. The letters are outlines (from DM Serif Display, SIL OFL 1.1), so no font
   is needed to render it.
 - Licence: [LICENSE.txt](LICENSE.txt).
 

@@ -2,7 +2,7 @@
 filmcraft-small.svg, filmcraft-1024.png, filmcraft-macos-512.png, filmcraft.icns, filmcraft.ico,
 hicolor/, and apps/filmcraft-web/web/favicon.png).
 
-Ubunye AI Ecosystems artwork adapted from the ThabangVision logo, MIT OR Apache-2.0; letter
+Ubunye AI Ecosystems artwork from the Ubunye Creative Studio brand system, MIT OR Apache-2.0; letter
 outline from DM Serif Display (SIL OFL 1.1). The master file is ubunye/brand/assets/icon.svg.
 The artwork is licensed under either of
 

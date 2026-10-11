@@ -59,7 +59,7 @@ UPSTREAM_URL = "https://github.com/storytold/filmcraft"
 CREDIT = "Based on FilmCraft by the ArtCraft team"
 ADDED = "2026-10-11 by Claude (agent) for Thabang Mashinini-Sekgoto"
 ICON_LICENCE = (
-    "Ubunye AI Ecosystems artwork adapted from the ThabangVision logo, MIT OR Apache-2.0; "
+    "Ubunye AI Ecosystems artwork from the Ubunye Creative Studio brand system, MIT OR Apache-2.0; "
     "letter outline from DM Serif Display (SIL OFL 1.1)"
 )
 
@@ -658,7 +658,7 @@ def sidecar(asset: Path, title: str, notes: str) -> str:
         f"asset:        {asset.name}\n"
         f"title:        {NAME} app icon, {title}\n"
         f"author:       {VENDOR}\n"
-        "source:       original work (Ubunye AI Ecosystems artwork adapted from the ThabangVision logo; ubunye/brand/assets/icon.svg)\n"
+        "source:       original work (Ubunye AI Ecosystems artwork from the Ubunye Creative Studio brand system; ubunye/brand/assets/icon.svg)\n"
         "license:      MIT OR Apache-2.0 (letter outline: OFL-1.1, DM Serif Display)\n"
         "license-file: assets/app-icon/LICENSE.txt\n"
         f"added:        {ADDED}\n"
@@ -669,7 +669,12 @@ def sidecar(asset: Path, title: str, notes: str) -> str:
 def icon_source_hash() -> str:
     import hashlib
 
-    return hashlib.sha256((BRAND / "assets" / "icon.svg").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    h = hashlib.sha256()
+    for name in ("icon.svg", "icon-small.svg"):  # same as make_icons.source_hash
+        f = BRAND / "assets" / name
+        if f.exists():
+            h.update(f.read_bytes().replace(b"\r\n", b"\n"))
+    return h.hexdigest()
 
 
 def icons(run: Run) -> None:
