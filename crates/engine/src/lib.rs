@@ -7,6 +7,9 @@
 //!
 //! The project is an `Arc<Project>` edited copy-on-write; undo keeps whole-project snapshots (cheap
 //! thanks to structural sharing of untouched items).
+//!
+//! Modified by Ubunye AI Ecosystems, 2026: the `kopano` module (stable ids across computers and
+//! the co-editing lanes) and the [`Session::stable_ids`] switch.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 
@@ -23,6 +26,7 @@ pub mod graphic_templates;
 pub mod graphics;
 pub mod interchange;
 pub mod keyboard;
+pub mod kopano;
 mod marker_export;
 pub mod masks;
 pub mod media_browser;
@@ -370,6 +374,10 @@ pub struct Session {
     pub mask_jobs: Vec<masks::PendingTrack>,
     /// Scene Edit Detection jobs whose results are applied when they finish.
     pub scene_jobs: Vec<scene_detect::PendingScene>,
+    /// Each opened or new project allocates ids from a block of its own ([`kopano`]), so two
+    /// computers editing copies of one project never make the same id. Off by default (tests
+    /// rely on predictable ids); [`Session::enable_stable_ids`] turns it on.
+    pub stable_ids: bool,
     /// Effect presets (built-in + the user's, persisted in the data directory).
     pub presets: presets::PresetLibrary,
     /// Export presets (built-in + the user's, persisted in the data directory) and favourites.
@@ -468,6 +476,7 @@ impl Session {
             media_jobs: Vec::new(),
             mask_jobs: Vec::new(),
             scene_jobs: Vec::new(),
+            stable_ids: false,
             presets: Default::default(),
             export_presets: Default::default(),
             export_queue: Default::default(),
@@ -1063,6 +1072,8 @@ mod image_sequence_tests;
 mod interchange_auto_points_tests;
 #[cfg(test)]
 mod keyboard_tests;
+#[cfg(test)]
+mod kopano_tests;
 #[cfg(test)]
 mod linked_speed_tests;
 #[cfg(test)]

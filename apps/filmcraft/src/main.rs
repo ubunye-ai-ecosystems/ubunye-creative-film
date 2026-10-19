@@ -148,6 +148,8 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             let mut session = Session::default();
+            // Ubunye: ids from a block of this session's own, so co-editing never clashes (Kopano)
+            session.enable_stable_ids();
             if let Some(dir) = data_dir.clone().or_else(default_data_dir) {
                 let mut cfg = AutosaveConfig::new(dir);
                 cfg.local_offset = local_offset;

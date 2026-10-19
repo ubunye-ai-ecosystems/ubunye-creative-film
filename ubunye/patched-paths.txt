@@ -108,3 +108,6 @@ packaging/macos/package.sh
 packaging/web/README.md
 packaging/windows/filmcraft.wxs
 packaging/windows/package.ps1
+crates/project/src/lib.rs
+crates/engine/src/lib.rs
+crates/engine/src/commands.rs

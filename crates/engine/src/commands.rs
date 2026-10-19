@@ -1,5 +1,8 @@
 //! The command registry. Ids follow Premiere's menu structure; every menu item, panel button,
 //! shortcut and timeline gesture maps to exactly one of these.
+//!
+//! Modified by Ubunye AI Ecosystems, 2026: registers the `kopano.*` commands and moves new and
+//! opened projects into a fresh id block (see `crate::kopano`).
 
 use std::sync::OnceLock;
 
@@ -743,6 +746,7 @@ fn build() -> Vec<CommandSpec> {
         cmd!("file.newProject", "Project…", ["File", "New"], Some("Cmd+Alt+N"), r#"{"name":str}"#, always, |s, p| {
             let name = str_p(p, "name").unwrap_or("Untitled").to_string();
             s.project = std::sync::Arc::new(filmcraft_project::Project::new(&name));
+            crate::kopano::enter_fresh_block(s);
             s.history = Default::default();
             s.history.limit = 200;
             s.state = crate::Session::default().state;
@@ -757,6 +761,7 @@ fn build() -> Vec<CommandSpec> {
         cmd!("file.openDemoProject", "Demo Project", ["File", "New"], None, "{}", always, |s, _| {
             let (p, seq) = crate::demo::demo_project(&s.media);
             s.project = std::sync::Arc::new(p);
+            crate::kopano::enter_fresh_block(s);
             s.history = Default::default();
             s.history.limit = 200;
             s.state = crate::Session::default().state;
@@ -2834,6 +2839,7 @@ fn build() -> Vec<CommandSpec> {
     v.extend(crate::keyboard::commands());
     v.extend(crate::project_panel::commands());
     v.extend(crate::media_browser::commands());
+    v.extend(crate::kopano::commands());
     // Edit ▸ Label ▸ <colour>, Paste Attributes, subclips, Video / Audio Options, Replace With Clip…
     // and their menu order
     crate::clip_ops::apply_layout(&mut v);
@@ -3659,6 +3665,7 @@ fn install_project(s: &mut Session, proj: filmcraft_project::Project, path: Opti
     s.offline = Default::default();
     let first = proj.sequences().next().map(|i| i.id);
     s.project = std::sync::Arc::new(proj);
+    crate::kopano::enter_fresh_block(s);
     s.history = Default::default();
     s.history.limit = 200;
     s.state = crate::Session::default().state;

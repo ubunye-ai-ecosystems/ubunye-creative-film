@@ -151,6 +151,8 @@ impl Backend {
             return Backend::Bridge(BridgeClient::new(addr).unwrap_or_else(|e| usage(e)));
         }
         let mut s = Session::default();
+        // Ubunye: ids from a block of this session's own, so co-editing never clashes (Kopano)
+        s.enable_stable_ids();
         // user export presets (and other per-user libraries) from the data directory
         if let Some(dir) = a.opt("--data-dir").map(std::path::PathBuf::from).or_else(filmcraft_engine::autosave::default_data_dir) {
             s.export_presets.set_dir(&dir);
