@@ -1,0 +1,105 @@
+# Ubunye-owned. Tests for the Share & Collaborate work (crates/ui-egui/src/ubunye, the engine's
+# kopano commands, Project::share_id) on GitHub's runners instead of a local machine:
+#   lib:   ui-egui lib tests (the panel tests), project, engine lib, the app, debug bins
+#   ui-N:  ui-egui integration tests, a quarter each, one test binary at a time (each deleted
+#          after it ran) so no runner fills its disk
+name: ubunye-film-panel-tests
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [feature/kopano-panel]
+    paths:
+      - crates/**
+      - apps/filmcraft/**
+      - Cargo.lock
+      - .github/workflows/ubunye-film-panel-tests.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ubunye-film-panel-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  lib:
+    name: lib + app (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk (Linux)
+        if: runner.os == 'Linux'
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libasound2-dev mesa-vulkan-drivers
+      - name: Toolchain (rust-toolchain.toml)
+        shell: bash
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: film-panel-${{ matrix.os }}
+      - name: Panel and client tests (ui-egui lib)
+        shell: bash
+        run: cargo test --locked -p filmcraft-ui-egui --lib --no-fail-fast
+      - name: Project (share_id, old files load)
+        shell: bash
+        run: cargo test --locked -p filmcraft-project --no-fail-fast
+      - name: Engine lib (kopano commands, install_project)
+        shell: bash
+        run: cargo test --locked -p filmcraft-engine --lib --no-fail-fast
+      - name: App tests and debug bins
+        shell: bash
+        run: |
+          cargo test --locked -p filmcraft --no-fail-fast
+          cargo build --locked -p filmcraft -p filmcraft-cli
+
+  ui:
+    name: ui-egui integration ${{ matrix.shard }}/4 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+        shard: [0, 1, 2, 3]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk (Linux)
+        if: runner.os == 'Linux'
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libasound2-dev mesa-vulkan-drivers
+      - name: Toolchain (rust-toolchain.toml)
+        shell: bash
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: film-panel-ui-${{ matrix.os }}
+      - name: Integration tests, one binary at a time
+        shell: bash
+        run: |
+          i=0; fails=()
+          for t in crates/ui-egui/tests/*.rs; do
+            n=$(basename "$t" .rs)
+            if [ $((i % 4)) -eq ${{ matrix.shard }} ]; then
+              echo "::group::$n"
+              if cargo test --locked -p filmcraft-ui-egui --test "$n" --no-fail-fast; then echo "PASS $n"; else echo "FAIL $n"; fails+=("$n"); fi
+              rm -f target/debug/deps/"$n"-*
+              echo "::endgroup::"
+              df -h . | tail -1
+            fi
+            i=$((i + 1))
+          done
+          if [ ${#fails[@]} -gt 0 ]; then echo "::error::failed: ${fails[*]}"; exit 1; fi
