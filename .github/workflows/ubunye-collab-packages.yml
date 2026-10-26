@@ -18,7 +18,7 @@ on:
         description: "Branch, tag or commit of ubunye-creative-studio-tools holding research/kopano/lab"
         type: string
         # pinned: the kopanod these installers were tested with (09-product-integration.md, S8)
-        default: fbc9bc26eccef753bd7fb5b6d2f07a1f2010f3b5
+        default: 5247b5d09816e328c524f75f5093d1db1132f7f0
   push:
     branches: [feature/kopano-panel]
     paths:
@@ -38,7 +38,7 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
   FILMCRAFT_BUILD_SHA: ${{ github.sha }}
-  KOPANO_REF: ${{ inputs.kopano_ref || 'fbc9bc26eccef753bd7fb5b6d2f07a1f2010f3b5' }}
+  KOPANO_REF: ${{ inputs.kopano_ref || '5247b5d09816e328c524f75f5093d1db1132f7f0' }}
   # kopanod's toolchain (as the studio-tools kopanod.yml); Film uses its rust-toolchain.toml.
   KOPANO_RUST: 1.97.0
 

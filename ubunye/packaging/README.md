@@ -74,7 +74,7 @@ stays offline, so Share & Collaborate shows the "Sign in with ThabangVision" but
 `<lab>` is `research/kopano/lab` of ubunye-creative-studio-tools. Each script builds `kopanod`
 and then runs the normal `packaging/<os>/package.*` with `UBUNYE_EXTRA_BIN_DIR` set (a small
 hook in those scripts). CI: `.github/workflows/ubunye-collab-packages.yml`, with input
-`kopano_ref` (default `fbc9bc26eccef753bd7fb5b6d2f07a1f2010f3b5`, the kopanod tested with Film).
+`kopano_ref` (default `5247b5d0`, kopanod with `run --standby` and `film-cli.path`).
 
 ## Not done yet
 
