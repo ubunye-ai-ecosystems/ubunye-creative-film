@@ -1,8 +1,12 @@
 # Ubunye-owned. Installers of Ubunye Film with ThabangVision collaboration (kopanod, the Kopano
 # service; slice S4) inside: one download per operating system, as workflow artifacts.
-#   Windows x64: MSI (per-machine) + portable zip, kopanod.exe beside filmcraft.exe
+#   Windows x64: MSI (per-machine; kopanod.exe shared in Program Files\ThabangVision\Collaboration)
+#                + portable zip (kopanod.exe beside filmcraft.exe)
 #   macOS:       DMG, kopanod and filmcraft-cli inside Ubunye Film.app/Contents/MacOS (universal)
-#   Linux x86_64: AppImage, .deb, .rpm, .tar.gz, /usr/bin/kopanod
+#   Linux x86_64: AppImage, .deb, .rpm, .tar.gz (deb/rpm: /usr/lib/filmcraft/kopanod, shared
+#                through update-alternatives as /usr/bin/kopanod)
+# Each job also installs and removes its package for real (one app); the test with two apps
+# is ubunye-collab-interop.yml in Ubunye Light.
 # See ubunye/packaging/README.md. Test builds only: nothing is released or uploaded anywhere,
 # and this workflow uses no signing secrets (release.yml keeps the real signing).
 name: ubunye-collab-packages
@@ -51,6 +55,9 @@ jobs:
           ref: ${{ env.KOPANO_REF }}
           path: kopano-src
           sparse-checkout: research/kopano/lab
+          # its history numbers kopanod's version (ubunye/packaging/kopanod-version.sh)
+          fetch-depth: 0
+          filter: blob:none
       - name: Toolchains
         shell: bash
         run: |
@@ -85,13 +92,15 @@ jobs:
           Start-Process msiexec -ArgumentList '/a', "`"$($msi.FullName)`"", '/qn', "TARGETDIR=`"$out`"" -Wait
           $k = Get-ChildItem $out -Recurse -Filter kopanod.exe | Select-Object -First 1
           if (-not $k) { throw 'kopanod.exe is not in the MSI' }
-          if (-not (Get-ChildItem $k.Directory -Filter filmcraft.exe)) { throw 'kopanod.exe is not beside filmcraft.exe' }
-          if (-not (Get-ChildItem $k.Directory -Filter filmcraft-cli.exe)) { throw 'kopanod.exe is not beside filmcraft-cli.exe (footage proxies)' }
+          if ($k.Directory.Name -ne 'Collaboration' -or $k.Directory.Parent.Name -ne 'ThabangVision') { throw "kopanod.exe is in $($k.Directory.FullName), not ThabangVision\Collaboration" }
+          "ok: $($k.FullName), '$($k.VersionInfo.FileDescription)' $($k.VersionInfo.FileVersion)"
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $zip = Get-ChildItem dist/release/*-portable.zip | Select-Object -First 1
           $names = [System.IO.Compression.ZipFile]::OpenRead($zip.FullName).Entries.Name
           if ($names -notcontains 'kopanod.exe') { throw 'kopanod.exe is not in the portable zip' }
-          "ok: $($k.FullName), '$($k.VersionInfo.FileDescription)'"
+      - name: Install and uninstall the MSI for real
+        shell: pwsh
+        run: ./ubunye/packaging/windows/test-shared-install.ps1 (Get-ChildItem dist/release/*.msi | Select-Object -First 1).FullName
       - uses: actions/upload-artifact@v4
         with:
           name: ubunye-film-collab-windows-x64
@@ -111,6 +120,9 @@ jobs:
           ref: ${{ env.KOPANO_REF }}
           path: kopano-src
           sparse-checkout: research/kopano/lab
+          # its history numbers kopanod's version (ubunye/packaging/kopanod-version.sh)
+          fetch-depth: 0
+          filter: blob:none
       - name: Toolchains
         run: |
           rustup toolchain install "$KOPANO_RUST" --profile minimal --target aarch64-apple-darwin,x86_64-apple-darwin
@@ -132,6 +144,7 @@ jobs:
         run: |
           app="target/macos-package/Ubunye Film.app"
           lipo -info "$app/Contents/MacOS/kopanod"
+          echo "kopanod.version: $(cat "$app/Contents/Resources/kopanod.version")"
           lipo -info "$app/Contents/MacOS/filmcraft-cli"
           codesign --verify --strict --deep --verbose=2 "$app"
           "$app/Contents/MacOS/kopanod" id --home "$RUNNER_TEMP/k" | tail -1
@@ -157,6 +170,9 @@ jobs:
           ref: ${{ env.KOPANO_REF }}
           path: kopano-src
           sparse-checkout: research/kopano/lab
+          # its history numbers kopanod's version (ubunye/packaging/kopanod-version.sh)
+          fetch-depth: 0
+          filter: blob:none
       - name: Install build and packaging tools
         run: |
           sudo apt-get update
@@ -180,29 +196,26 @@ jobs:
       # Linux packages are not code signed; a future repository (apt/rpm) would sign its index.
       - name: Build and package (AppImage, deb, rpm, tar.gz)
         run: ubunye/packaging/linux/collab-package.sh kopano-src/research/kopano/lab
+      - name: Launch check tests (ubunye_collab.rs) and format
+        run: |
+          cargo fmt --check -p filmcraft
+          cargo test --release --locked -p filmcraft -- ubunye_collab
       - name: Check the packages hold kopanod
         run: |
-          dpkg-deb --contents dist/release/*.deb | grep -E 'usr/bin/kopanod$'
+          dpkg-deb --contents dist/release/*.deb | grep -E 'usr/lib/filmcraft/kopanod$'
+          dpkg-deb --contents dist/release/*.deb | grep -E 'usr/lib/filmcraft/thabangvision-collab.service$'
+          if dpkg-deb --contents dist/release/*.deb | grep -E 'usr/bin/kopanod$'; then echo "the deb must not own /usr/bin/kopanod"; exit 1; fi
           dpkg-deb --info dist/release/*.deb | grep -i prerm
           tar -tzf dist/release/*.tar.gz | grep -E '/bin/kopanod$'
           for a in dist/release/*.AppImage; do
             chmod +x "$a"
             (cd "$RUNNER_TEMP" && APPIMAGE_EXTRACT_AND_RUN=1 "$OLDPWD/$a" --appimage-extract >/dev/null && test -x squashfs-root/usr/bin/kopanod)
           done
-          # install, first start of the service, remove (the unit and the process go)
-          sudo apt-get install -y ./dist/release/*.deb
-          /usr/bin/kopanod init | tail -1
-          (/usr/bin/kopanod run --api-port 18590 >"$RUNNER_TEMP/k.log" 2>&1 &)
-          # the service answers once its port is bound; give a cold runner up to 20 s
-          ok=
-          for i in $(seq 1 20); do
-            if /usr/bin/kopanod call --api-port 18590 --json '{"op":"hello"}' 2>/dev/null | grep -q '"signed_in":false'; then ok=1; break; fi
-            sleep 1
-          done
-          if [ -z "$ok" ]; then echo "kopanod did not answer; its log:"; cat "$RUNNER_TEMP/k.log"; exit 1; fi
-          sudo apt-get remove -y filmcraft
-          sleep 1
-          if pgrep -f '^/usr/bin/kopanod '; then echo "kopanod still running after remove"; exit 1; fi
+      - name: Install and remove the .deb for real (systemd user unit)
+        run: sudo ./ubunye/packaging/linux/test-shared-install.sh dist/release/*.deb
+      - name: Install and remove the .rpm for real (Fedora)
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w fedora:41 sh -c 'dnf install -y -q procps-ng >/dev/null && ./ubunye/packaging/linux/test-shared-install.sh dist/release/*.rpm'
       - uses: actions/upload-artifact@v4
         with:
           name: ubunye-film-collab-linux-x86_64
