@@ -50,6 +50,7 @@ pub mod scrub;
 pub mod source_playback;
 pub mod state;
 pub mod theme;
+pub mod ubunye;
 pub mod widgets;
 
 use std::collections::HashMap;
@@ -313,6 +314,8 @@ pub struct FilmcraftApp {
     pub workspaces: dock::WorkspacePrefs,
     /// Workspace names and the current one, as last handed to the native menu.
     menu_workspaces: (Vec<String>, String),
+    /// Ubunye: the Share & Collaborate window and its client for the collaboration service.
+    pub kopano: ubunye::kopano_panel::KopanoPanel,
 }
 
 pub struct GpuState {
@@ -495,6 +498,7 @@ impl FilmcraftApp {
             workspace_restored: false,
             workspaces,
             menu_workspaces: Default::default(),
+            kopano: Default::default(),
         }
     }
 
@@ -1499,6 +1503,8 @@ impl FilmcraftApp {
         // the Timeline has had its chance to place a file drop this frame; anything left stays a bin import
         self.pending_timeline_drop = None;
         panels::dialogs::show(self, &ctx);
+        // Ubunye: Share & Collaborate (and its background work while closed)
+        ubunye::kopano_panel::show(self, &ctx);
         if !self.ui.show_status_bar {
             // no bar to draw the job in, but a finished preview render still plays
             self.watch_jobs(ui.ctx());

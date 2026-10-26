@@ -5,6 +5,7 @@
     wix build filmcraft.wxs -arch x64 -d Version=1.2.3 -d BinDir=... -d IconPath=... -o out.msi
 
   Per-machine install into Program Files and a Start Menu shortcut. No file associations.
+  Modified by Ubunye AI Ecosystems, 2026 (CollabBinDir hook for ThabangVision collaboration).
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package
@@ -35,6 +36,10 @@
 
     <Feature Id="Main" Title="Ubunye Film" Level="1">
       <ComponentGroupRef Id="FilmcraftFiles" />
+<?ifdef CollabBinDir?>
+      <!-- Ubunye: ThabangVision collaboration (kopanod), from ubunye/packaging/windows/collab.wxs -->
+      <ComponentGroupRef Id="UbunyeCollabFiles" />
+<?endif?>
     </Feature>
   </Package>
 

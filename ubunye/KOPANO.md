@@ -50,6 +50,33 @@ Each call is one undo step named "Kopano". Applying what `kopano.items` reported
 Media is reported by path and size. The connector names media by the BLAKE3 hash of the
 original file, so Film needs no hashing dependency.
 
+## Share & Collaborate window
+
+People never need scripts: the people icon in the header (also Window ▸ Share & Collaborate)
+opens the window (`crates/ui-egui/src/ubunye/kopano_panel.rs`, client in `kopano.rs`). It talks
+to kopanod's local API (127.0.0.1, `KOPANO_API_PORT`, default 47100, token in `KOPANO_HOME`) and
+binds this window as `{"kind": "film-control", "port": P}`: the `--control` port, or one the app
+opens on demand at the first Share or Join.
+
+- Signed-in line, shared projects with teammates (green dot when online), recent activity.
+- "Share this project" with "I approve changes" (default) or "Work together live".
+- Changes to review (View, Before / After / Done, Approve, Decline, Keep yours / Take theirs),
+  the member's own state, and the pick for a live clash.
+- Footage: what plays from a proxy, originals arriving, "Get originals" (`fetch-original all`).
+  In the Project panel a clip whose footage is on its way says "Playing a proxy", "Original
+  arriving" or "On its way" instead of "Media missing", and Film's Link Media prompt is put
+  away once the footage is coming.
+- "Share this project" asks for the teammate's email and always answers "Invite sent";
+  teammates are shown by name, never by email.
+- Advanced (testing): device and project ids with Copy, and Join by ids, until email invites
+  reach the teammate by themselves.
+
+kopanod's review summary says "photos" for every item; the window counts the changed keys
+itself and says clips and tracks. The word "Kopano" is never on screen.
+
+The app starts kopanod when it ships beside it (`apps/filmcraft/src/ubunye_collab.rs`), and
+kopanod makes proxies with the `filmcraft-cli` beside it. Installers: `ubunye/packaging/`.
+
 ## Not done yet
 
 - New sequences and project items (bins, media metadata) do not travel yet; both sides need the

@@ -108,6 +108,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("window.workspace.saveChanges", "Save Changes to this Workspace", ["Window", "Workspaces"], None),
     uic!("window.workspace.saveAs", "Save as New Workspace…", ["Window", "Workspaces"], None),
     uic!("window.workspace.edit", "Edit Workspaces…", ["Window", "Workspaces"], None),
+    // Ubunye: ThabangVision collaboration (crate::ubunye::kopano_panel)
+    uic!("kopano.panel", "Share & Collaborate", ["Window"], None),
     uic!("tool.selection", "Selection Tool", [], Some("V")),
     uic!("tool.trackSelectForward", "Track Select Forward Tool", [], Some("A")),
     uic!("tool.trackSelectBackward", "Track Select Backward Tool", [], Some("Shift+A")),
@@ -231,6 +233,10 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
         return Ok(Value::Null);
     }
     if let Some(r) = crate::panels::workspaces::route(app, id, &params) {
+        return r;
+    }
+    // Ubunye: Share & Collaborate (the engine's own kopano.* commands fall through)
+    if let Some(r) = crate::ubunye::kopano_panel::command(app, ctx, id, &params) {
         return r;
     }
     if let Some(t) = id.strip_prefix("tool.") {

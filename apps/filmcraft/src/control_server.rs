@@ -36,6 +36,26 @@ pub fn start(port: u16, ctx: egui::Context) -> Receiver<ControlRequest> {
     rx
 }
 
+/// Ubunye, Share & Collaborate: the port the collaboration service reaches this window on. With
+/// `--control` (`fixed`) it is that port; otherwise the first call starts the server on a free
+/// loopback port and hands back its request channel. Later calls return the same port.
+pub fn on_demand(fixed: Option<u16>, ctx: egui::Context) -> filmcraft_ui_egui::ubunye::kopano_panel::StartControl {
+    let mut port = fixed;
+    Box::new(move || {
+        if let Some(p) = port {
+            return Ok((p, None));
+        }
+        let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|e| format!("could not open a control port: {e}"))?;
+        let p = listener.local_addr().map_err(|e| format!("could not open a control port: {e}"))?.port();
+        let (tx, rx) = channel::<ControlRequest>();
+        let ctx = ctx.clone();
+        std::thread::Builder::new().name("control-server".into()).spawn(move || accept_loop(listener, tx, ctx)).map_err(|e| e.to_string())?;
+        log::info!("control server listening on 127.0.0.1:{p} (for Share & Collaborate)");
+        port = Some(p);
+        Ok((p, Some(rx)))
+    })
+}
+
 fn accept_loop(listener: TcpListener, tx: Sender<ControlRequest>, ctx: egui::Context) {
     let open = Arc::new(AtomicUsize::new(0));
     for mut stream in listener.incoming().flatten() {

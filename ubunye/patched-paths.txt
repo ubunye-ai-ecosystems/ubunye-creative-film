@@ -111,3 +111,5 @@ packaging/windows/package.ps1
 crates/project/src/lib.rs
 crates/engine/src/lib.rs
 crates/engine/src/commands.rs
+crates/ui-egui/src/panels/project_views.rs
+apps/filmcraft/src/control_server.rs
