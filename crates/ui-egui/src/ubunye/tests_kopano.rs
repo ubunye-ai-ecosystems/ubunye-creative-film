@@ -239,15 +239,24 @@ fn records_say_which_shared_projects_this_window_holds() {
     let home = temp_home();
     let set = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<std::collections::BTreeSet<_>>();
     assert_eq!(read_record(&home, PID), Record::default());
-    let saved = Record { file: Some(r"T:\lab\alice\cableway.fcproj".into()), footage: set(&["C0003.MP4", "C0024.MP4"]) };
+    let saved = Record { share: None, file: Some(r"T:\lab\alice\cableway.fcproj".into()), footage: set(&["C0003.MP4", "C0024.MP4"]) };
     write_record(&home, PID, &saved).unwrap();
     assert_eq!(read_record(&home, PID), saved);
-    // the same file (slashes as the OS writes them), or no file and half the footage
-    let same_file = Record { file: Some("T:/lab/alice/cableway.fcproj".into()), footage: set(&[]) };
+    // the same file (slashes as the OS writes them); never by footage names alone
+    let same_file = Record { share: None, file: Some("T:/lab/alice/cableway.fcproj".into()), footage: set(&[]) };
     assert_eq!(holds(&saved, &same_file), cfg!(windows) || same_file.file == saved.file);
-    assert!(!holds(&saved, &Record { file: Some("/other.fcproj".into()), footage: set(&["C0003.MP4", "C0024.MP4"]) }));
-    let unsaved = Record { file: None, footage: set(&["C0003.MP4", "C0024.MP4"]) };
-    assert!(holds(&Record { file: None, footage: set(&["C0003.MP4", "C0024.MP4", "X.MP4"]) }, &unsaved));
+    assert!(!holds(&saved, &Record { share: None, file: Some("/other.fcproj".into()), footage: set(&["C0003.MP4", "C0024.MP4"]) }));
+    let unsaved = Record { share: None, file: None, footage: set(&["C0003.MP4", "C0024.MP4"]) };
+    // camera names such as C0003.MP4 repeat across shoots: an unsaved window never matches
+    assert!(!holds(&Record { share: None, file: None, footage: set(&["C0003.MP4", "C0024.MP4"]) }, &unsaved));
+    assert!(!holds(&saved, &unsaved));
+    // the project's own share id counts, saved or not; another shared project's does not
+    let shared = Record { share: Some(PID.into()), file: None, footage: set(&[]) };
+    write_record(&home, PID, &shared).unwrap();
+    assert_eq!(read_record(&home, PID), shared);
+    assert!(holds(&shared, &Record { share: Some(PID.into()), file: None, footage: set(&[]) }));
+    assert!(!holds(&shared, &Record { share: Some(NEW_PID.into()), file: None, footage: set(&[]) }));
+    assert!(!holds(&Record::default(), &Record::default()));
     assert!(!holds(&Record::default(), &unsaved));
     // a bad id never becomes a path; junk reads as nothing
     assert!(write_record(&home, "../evil", &saved).is_err());
@@ -268,6 +277,12 @@ struct FakeData {
     approve_owner: AtomicBool,
     approve_member: AtomicBool,
     live_clash: AtomicBool,
+    /// A sign-in waits in the browser (after `sign-in`, until `sign-in-cancel`).
+    signing_in: AtomicBool,
+    /// The service knows ThabangVision people and invites (else "unknown op", as older ones).
+    tv: AtomicBool,
+    /// With `tv`: this person is a member, not the owner.
+    tv_member: AtomicBool,
 }
 
 struct Fake {
@@ -361,8 +376,37 @@ fn serve(c: TcpStream, got: &Mutex<Vec<Value>>, stop: &AtomicBool, data: &FakeDa
                 }
                 return;
             }
+            "hello" if data.signed_out.load(Ordering::SeqCst) => json!({"device": ALICE, "name": "", "account": "", "signed_in": false, "projects": [],
+                "signing_in": if data.signing_in.load(Ordering::SeqCst) { json!({"code": "BCDF-1234", "link": "http://localhost:3100/link?code=BCDF-1234", "until_ms": 1.8e12}) } else { Value::Null },
+                "message": "Sign-in was not approved in the browser."}),
             "hello" => json!({"device": ALICE, "name": "Alice", "account": "acct-alice", "signed_in": !data.signed_out.load(Ordering::SeqCst),
                 "signed_in_until_ms": 1.8e12, "projects": [{"id": PID, "name": "Cable way", "app": app_binding(app_port)}]}),
+            "sign-in" => {
+                data.signing_in.store(true, Ordering::SeqCst);
+                json!({"code": "BCDF-1234", "link": "http://localhost:3100/link?code=BCDF-1234", "until_ms": 1.8e12})
+            }
+            "sign-in-cancel" => {
+                data.signing_in.store(false, Ordering::SeqCst);
+                json!("not signing in")
+            }
+            "sign-out" => {
+                data.signed_out.store(true, Ordering::SeqCst);
+                json!("signed out")
+            }
+            "people" if data.tv.load(Ordering::SeqCst) => {
+                let member = data.tv_member.load(Ordering::SeqCst);
+                json!({"shared": "tv-1", "people": [
+                    {"user": "u-alice", "name": "Alice", "role": "owner", "status": "active", "me": !member, "online": true, "on_project": true},
+                    {"user": "u-m1", "name": "Member1", "role": "editor", "status": "active", "me": member, "online": true, "on_project": true},
+                    {"user": "u-bob", "name": "Bob", "role": "editor", "status": "invited", "me": false, "online": false, "on_project": false}]})
+            }
+            "shared-projects" if data.tv.load(Ordering::SeqCst) => json!({"mine": [{"shared": "tv-1", "name": "Cable way", "project": PID, "role": "owner", "status": "active", "here": true}],
+                "shared": [{"shared": "tv-2", "name": "Sound mix", "project": NEW_PID, "role": "editor", "status": "invited", "here": false},
+                           {"shared": "tv-3", "name": "Already here", "project": PID, "role": "editor", "status": "active", "here": true}]}),
+            "invite" => json!({"message": "Invite sent."}),
+            "join-shared" => json!({"project": NEW_PID, "name": "Sound mix"}),
+            "leave" => json!({"left": true}),
+            "remove-person" => json!({"removed": true}),
             "status" => {
                 let mut st = json!({"head": "1234abcd", "name": "Cable way", "app": app_binding(app_port),
                     "teammates": [{"device": M1, "name": "Member1", "account": "acct-m1", "online": true}], "online": {M1: "Member1"},
@@ -458,6 +502,41 @@ fn client_follows_a_fake_service_and_finds_it_again_after_a_restart() {
     let fake2 = Fake::start(TcpListener::bind(("127.0.0.1", config.port)).unwrap());
     wait("running again", T, || client.state().running);
     wait("events again", T, || !fake2.requests("subscribe").is_empty());
+}
+
+#[test]
+fn errors_on_screen_are_plain_words() {
+    for raw in [
+        r"the collaboration key file is missing (C:\Users\a\AppData\Local\Kopano\api.token)",
+        "the collaboration service refused this window (its key file api.token does not match)",
+        "the collaboration folder is unknown here (set KOPANO_HOME)",
+        "could not start collaboration: The system cannot find the file specified. (os error 2)",
+        "no addressing information for c013b977",
+        "This window can't be shared: it has no control port (start Ubunye Film with --control PORT)",
+        "unknown op",
+        "project missing",
+        "store: object 1234 not found under /home/a/.local/share/kopano/projects",
+    ] {
+        let p = for_people(raw);
+        plain(&p);
+        assert!(!p.contains('/') && !p.contains('\\') && !p.contains("api.token") && !p.contains("--control"), "{raw} -> {p}");
+    }
+    // the window's own messages are plain already
+    for own in ["Type your teammate's email, so they can join", "Shared this project. Invite sent.", NOT_RUNNING] {
+        assert_eq!(for_people(own), own);
+    }
+}
+
+#[test]
+fn a_wrong_key_file_shows_no_path_on_screen() {
+    let (_fake, config, home) = fake_service();
+    std::fs::write(home.join("api.token"), "other").unwrap();
+    let mut d = Driver::new(config, None);
+    d.ok("ui.menu.invoke", json!({"command": "kopano.panel"}));
+    d.until("the refusal", |s| s.contains("could not open collaboration on this computer"));
+    let s = d.screen();
+    plain(&s);
+    assert!(!s.contains("api.token") && !s.contains(&home.to_string_lossy().to_string()), "{s}");
 }
 
 #[test]
@@ -645,9 +724,85 @@ fn without_a_sign_in_the_window_offers_one() {
     let mut d = Driver::new(config, None);
     d.ok("ui.menu.invoke", json!({"command": "kopano.panel"}));
     d.until("sign-in", |s| s.contains("Sign in with ThabangVision"));
-    d.click("collab.signIn");
-    d.until("coming soon", |s| s.contains("Sign-in is coming soon."));
-    plain(&d.screen());
+    // why the last sign-in ended, in the service's own sentence
+    d.until("the last message", |s| s.contains("Sign-in was not approved in the browser."));
+    d.click_until("collab.signIn", || fake.requests("sign-in").len() == 1);
+    d.until("the code", |s| s.contains("Check that the browser shows") && s.contains("BCDF-1234") && s.contains("Open the page again"));
+    let s = d.screen();
+    plain(&s);
+    assert!(!s.contains("Shared projects") && !s.contains("Share this project"), "nothing else before the sign-in: {s}");
+    d.click_until("collab.signInCancel", || fake.requests("sign-in-cancel").len() == 1);
+    d.until("back to Sign in", |s| s.contains("Sign in with ThabangVision") && !s.contains("BCDF-1234"));
+}
+
+#[test]
+fn signed_in_the_window_signs_out() {
+    let (fake, config, _home) = fake_service();
+    let mut d = Driver::new(config, None);
+    d.ok("ui.menu.invoke", json!({"command": "kopano.panel"}));
+    d.until("signed in", |s| s.contains("Signed in to ThabangVision as Alice"));
+    d.click_until("collab.signOut", || fake.requests("sign-out").len() == 1);
+    d.until("signed out", |s| s.contains("Sign in with ThabangVision"));
+}
+
+#[test]
+fn the_owner_sees_people_by_name_invites_by_email_and_takes_someone_off() {
+    let (fake, config, _home) = fake_service();
+    fake.data.tv.store(true, Ordering::SeqCst);
+    let mut d = Driver::new(config, None);
+    d.ok("ui.menu.invoke", json!({"command": "kopano.panel"}));
+    d.until("the people", |s| s.contains("Member1") && s.contains("can edit") && s.contains("Bob") && s.contains("invited"));
+    let s = d.screen();
+    plain(&s);
+    assert!(!s.contains('@') && !s.contains("u-m1"), "no emails or user ids: {s}");
+    let tag = short(PID).to_string();
+    d.type_into(&format!("collab.inviteEmail.{tag}"), "bob@example.com");
+    d.click_until(&format!("collab.invite.{tag}"), || fake.requests("invite").len() == 1);
+    let inv = &fake.requests("invite")[0];
+    assert_eq!((inv["project"].as_str(), inv["email"].as_str()), (Some(PID), Some("bob@example.com")));
+    d.until("invite sent", |s| s.contains("Invite sent.") && !s.contains("bob@example.com"));
+    d.click_until(&format!("collab.remove.{tag}.u-bob"), || fake.requests("remove-person").len() == 1);
+    assert_eq!(fake.requests("remove-person")[0]["user"], "u-bob");
+    d.until("taken off", |s| s.contains("Taken off the project."));
+    // no Remove for themselves, no Leave for the owner
+    assert!(d.ok("ui.elements", json!({"prefix": "collab."})).to_string().contains("remove.") && !d.screen().contains("Leave this project"));
+}
+
+#[test]
+fn a_member_opens_a_project_shared_with_them_and_can_leave() {
+    let (fake, config, _home) = fake_service();
+    fake.data.tv.store(true, Ordering::SeqCst);
+    fake.data.tv_member.store(true, Ordering::SeqCst);
+    let mut d = Driver::new(config, Some((18999, Arc::default())));
+    d.ok("ui.menu.invoke", json!({"command": "kopano.panel"}));
+    d.until("shared with me", |s| s.contains("Shared with me") && s.contains("Sound mix") && s.contains("Open here") && !s.contains("Already here"));
+    d.click_until("collab.openShared.tv-2", || fake.requests("join-shared").len() == 1);
+    let j = &fake.requests("join-shared")[0];
+    assert_eq!(j["shared"], "tv-2");
+    assert_eq!(j["app"], json!({"kind": "film-control", "port": 18999}));
+    d.until("joined", |s| s.contains("Joined."));
+    let tag = short(PID).to_string();
+    d.until("leave", |s| s.contains("Leave this project"));
+    assert!(!d.ok("ui.elements", json!({"prefix": "collab."})).to_string().contains("collab.remove."), "a member takes no one off");
+    d.click_until(&format!("collab.leave.{tag}"), || fake.requests("leave").len() == 1);
+    assert_eq!(fake.requests("leave")[0]["project"], PID);
+    d.until("left", |s| s.contains("You left the project."));
+}
+
+#[test]
+fn sharing_with_an_email_sends_an_invite_after_the_project_is_made() {
+    let (fake, config, _home) = fake_service();
+    fake.data.tv.store(true, Ordering::SeqCst);
+    let mut d = Driver::new(config, Some((18999, Arc::default())));
+    let r = d.exec("kopano.share", json!({"name": "Cut 3", "email": "m1@example.com, acct-lab"}));
+    assert_eq!(r["ok"], true, "{r}");
+    wait("the invite", T, || fake.requests("invite").len() == 1);
+    let made = &fake.requests("create-project")[0];
+    assert_eq!(made["members"], json!([{"account": "acct-lab", "role": "editor", "lanes": []}]));
+    let inv = &fake.requests("invite")[0];
+    assert_eq!((inv["project"].as_str(), inv["email"].as_str()), (Some(NEW_PID), Some("m1@example.com")));
+    wait("done", T, || d.app().kopano.client.state().job.is_some_and(|j| !j.busy));
+    assert_eq!(d.app().kopano.client.state().job.unwrap().text, "Shared this project. Invite sent.");
 }
 
 #[test]
@@ -716,7 +871,7 @@ fn the_owner_reviews_clips_views_approves_and_declines_with_clicks() {
     d.click_until(&format!("collab.view.{tag}.acct-m1"), || fake.requests("view").len() == 1);
     assert_eq!(fake.requests("view")[0]["show"], "member");
     d.until("view done", |s| s.contains("Showing their version of the clips"));
-    d.click(&format!("collab.keepMain.{tag}.0"));
+    d.click(&format!("collab.keepMain.{tag}.acct-m1.0"));
     d.click_until(&format!("collab.approve.{tag}.acct-m1"), || fake.requests("approve").len() == 1);
     let a = &fake.requests("approve")[0];
     assert_eq!((a["member"].as_str(), a["version"].as_str()), (Some("acct-m1"), Some("v1")));
@@ -724,6 +879,26 @@ fn the_owner_reviews_clips_views_approves_and_declines_with_clicks() {
     d.until("approved", |s| s.contains("Approved. The changes are in your project."));
     d.click_until(&format!("collab.decline.{tag}.acct-m1"), || fake.requests("decline").len() == 1);
     d.until("declined", |s| s.contains("Declined. Your project stays as it was."));
+}
+
+#[test]
+fn two_members_clashing_on_one_setting_keep_their_own_picks() {
+    let (fake, config, _home) = fake_service();
+    fake.data.approve_owner.store(true, Ordering::SeqCst);
+    let mut d = Driver::new(config, Some((18999, Arc::default())));
+    let key = "film/5/clip/16777217#sound";
+    assert_eq!(d.exec("kopano.choose", json!({"project": PID, "member": "acct-m1", "key": key, "pick": "main"}))["ok"], true);
+    assert_eq!(d.exec("kopano.choose", json!({"project": PID, "member": "acct-m2", "key": key, "pick": "member"}))["ok"], true);
+    // a pick says whose changes it is for
+    assert!(d.exec("kopano.choose", json!({"project": PID, "key": key, "pick": "main"}))["error"].is_string());
+    assert_eq!(d.exec("kopano.approve", json!({"project": PID, "member": "acct-m1", "version": "v1"}))["ok"], true);
+    wait("the first approve", T, || fake.requests("approve").len() == 1);
+    assert_eq!(fake.requests("approve")[0]["choices"], json!({key: "main"}));
+    wait("the first approve done", T, || d.app().kopano.client.state().job.is_some_and(|j| !j.busy));
+    // approving Member1 used up only Member1's pick
+    assert_eq!(d.exec("kopano.approve", json!({"project": PID, "member": "acct-m2", "version": "v2"}))["ok"], true);
+    wait("the second approve", T, || fake.requests("approve").len() == 2);
+    assert_eq!(fake.requests("approve")[1]["choices"], json!({key: "member"}));
 }
 
 #[test]
@@ -794,6 +969,121 @@ fn a_live_clash_offers_both_values() {
 }
 
 #[test]
+fn an_unsaved_window_with_the_same_camera_names_is_linked_only_by_the_person() {
+    let (fake, config, home) = fake_service();
+    let dead = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+    fake.data.app_port.store(usize::from(dead), Ordering::SeqCst);
+    let mut d = Driver::new(config, None);
+    d.app().kopano.control_port = Some(18777);
+    // the record names footage this unsaved window also has (another shoot, same camera names)
+    write_record(&home, PID, &Record { share: None, file: None, footage: ["C0003.MP4".to_string()].into() }).unwrap();
+    {
+        let app = d.app();
+        let id = *app.session.project.items.iter().find(|(_, it)| it.as_media().is_some()).map(|(id, _)| id).unwrap();
+        let p = Arc::make_mut(&mut app.session.project);
+        if let Some(m) = p.items.get_mut(&id).and_then(|it| it.as_media_mut()) {
+            m.media = filmcraft_project::MediaRef::File { path: "/other-shoot/C0003.MP4".into() };
+        }
+    }
+    d.ok("ui.menu.invoke", json!({"command": "kopano.panel"}));
+    d.until("the link offer", |s| s.contains("No window has it open") && s.contains("Link this window"));
+    for _ in 0..40 {
+        d.frames(1);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(fake.requests("attach").is_empty(), "linked by itself: {:?}", fake.requests("attach"));
+    let tag = short(PID).to_string();
+    d.click_until(&format!("collab.link.{tag}"), || !fake.requests("attach").is_empty());
+    assert_eq!(fake.requests("attach")[0]["app"], json!({"kind": "film-control", "port": 18777}));
+}
+
+#[test]
+fn an_unsaved_window_carrying_the_share_id_is_linked_again_after_a_restart() {
+    let (fake, config, home) = fake_service();
+    let dead = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+    fake.data.app_port.store(usize::from(dead), Ordering::SeqCst);
+    let mut d = Driver::new(config, None);
+    d.app().kopano.control_port = Some(18777);
+    write_record(&home, PID, &Record { share: Some(PID.into()), file: None, footage: Default::default() }).unwrap();
+    // crash recovery brought the unsaved project back with its share id
+    Arc::make_mut(&mut d.app().session.project).share_id = Some(PID.into());
+    let t0 = Instant::now();
+    while fake.data.app_port.load(Ordering::SeqCst) != 18777 {
+        assert!(t0.elapsed() < T, "attach not sent: {:?}", fake.requests("attach"));
+        d.frames(1);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn a_linked_window_stamps_the_share_id_on_its_project_and_old_files_load_without_it() {
+    let (fake, config, home) = fake_service();
+    fake.data.app_port.store(18999, Ordering::SeqCst);
+    let mut d = Driver::new(config, Some((18999, Arc::default())));
+    d.app().kopano.control_port = Some(18999);
+    assert_eq!(d.app().session.project.share_id, None);
+    let t0 = Instant::now();
+    while d.app().session.project.share_id.as_deref() != Some(PID) {
+        assert!(t0.elapsed() < T, "no share id on the project");
+        d.frames(1);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // it is saved with the project, and a file from before loads with none
+    let file = home.join("cut.fcproj").to_string_lossy().to_string();
+    assert_eq!(d.exec("file.saveAs", json!({"path": file}))["ok"], true);
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(text.contains(PID), "share id not saved");
+    let mut s = Session::default();
+    s.execute("file.open", json!({"path": file})).unwrap();
+    assert_eq!(s.project.share_id.as_deref(), Some(PID));
+    let mut v: Value = serde_json::from_str(&text).unwrap();
+    let removed = v.pointer_mut("/project").and_then(Value::as_object_mut).and_then(|p| p.remove("share_id"));
+    assert!(removed.is_some(), "share_id is not where expected");
+    std::fs::write(&file, v.to_string()).unwrap();
+    let mut s = Session::default();
+    s.execute("file.open", json!({"path": file})).unwrap();
+    assert_eq!(s.project.share_id, None);
+}
+
+#[test]
+fn opening_another_project_keeps_the_shared_one_with_its_own_file() {
+    let (fake, config, home) = fake_service();
+    fake.data.app_port.store(18999, Ordering::SeqCst);
+    let mut d = Driver::new(config, Some((18999, Arc::default())));
+    d.app().kopano.control_port = Some(18999);
+    let file = home.join("cableway.fcproj").to_string_lossy().to_string();
+    assert_eq!(d.exec("file.saveAs", json!({"path": file}))["ok"], true);
+    d.ok("ui.menu.invoke", json!({"command": "kopano.panel"}));
+    let recorded = |home: &std::path::Path| read_record(home, PID).file;
+    let t0 = Instant::now();
+    while recorded(&home).as_deref() != Some(file.as_str()) {
+        assert!(t0.elapsed() < T, "no record of the shared project's file");
+        d.frames(1);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(d.exec("kopano.items", json!({}))["ok"], true);
+    // the person opens another project in this window
+    assert_eq!(d.exec("file.newProject", json!({"name": "Holiday"}))["ok"], true);
+    // at once, before the panel looks: the service may not read or change this project
+    for cmd in ["kopano.items", "kopano.apply", "kopano.idBlock"] {
+        let r = d.exec(cmd, json!({}));
+        assert_eq!(r["ok"], false, "{cmd}: {r}");
+    }
+    d.until("the plain line", |s| s.contains("Another project is open in this window. Nothing of it is shared."));
+    plain(&d.screen());
+    for _ in 0..30 {
+        d.frames(1);
+    }
+    // the shared project's record still names its own file, not the other project
+    assert_eq!(recorded(&home).as_deref(), Some(file.as_str()));
+    assert!(fake.requests("attach").is_empty());
+    // opening the shared project's file again links it again
+    assert_eq!(d.exec("file.open", json!({"path": file}))["ok"], true);
+    d.until("linked again", |s| s.contains("This window is linked to Cable way again") && !s.contains("Nothing of it is shared"));
+    assert_eq!(d.exec("kopano.items", json!({}))["ok"], true);
+}
+
+#[test]
 fn after_a_restart_the_window_links_its_shared_project_again() {
     let (fake, config, home) = fake_service();
     // the project was bound to a port nobody answers on any more (Film restarted)
@@ -801,19 +1091,11 @@ fn after_a_restart_the_window_links_its_shared_project_again() {
     fake.data.app_port.store(usize::from(dead), Ordering::SeqCst);
     let mut d = Driver::new(config, None);
     d.app().kopano.control_port = Some(18777);
-    // this window holds the project's footage (the demo project is unsaved: by footage names)
-    let ours: std::collections::BTreeSet<String> = ["C0003.MP4".to_string()].into();
-    write_record(&home, PID, &Record { file: None, footage: ours.clone() }).unwrap();
+    // this window has the shared project's file open
+    let file = home.join("cableway.fcproj").to_string_lossy().to_string();
+    assert_eq!(d.exec("file.saveAs", json!({"path": file}))["ok"], true);
+    write_record(&home, PID, &Record { share: None, file: Some(file), footage: Default::default() }).unwrap();
     let mut attached = false;
-    // the demo project has no file media: give it the recorded footage
-    {
-        let app = d.app();
-        let id = *app.session.project.items.iter().find(|(_, it)| it.as_media().is_some()).map(|(id, _)| id).unwrap();
-        let p = Arc::make_mut(&mut app.session.project);
-        if let Some(m) = p.items.get_mut(&id).and_then(|it| it.as_media_mut()) {
-            m.media = filmcraft_project::MediaRef::File { path: "/x/C0003.MP4".into() };
-        }
-    }
     let t0 = Instant::now();
     while t0.elapsed() < T {
         d.frames(1);

@@ -378,6 +378,9 @@ pub struct Session {
     /// computers editing copies of one project never make the same id. Off by default (tests
     /// rely on predictable ids); [`Session::enable_stable_ids`] turns it on.
     pub stable_ids: bool,
+    /// Counts the projects this session has had (open, recover, new): a window shared with
+    /// teammates knows when the person opened another project in it (Ubunye).
+    pub document: u64,
     /// Effect presets (built-in + the user's, persisted in the data directory).
     pub presets: presets::PresetLibrary,
     /// Export presets (built-in + the user's, persisted in the data directory) and favourites.
@@ -447,6 +450,7 @@ impl Session {
             history: History { limit: 200, ..Default::default() },
             revision: 1,
             saved_revision: 1,
+            document: 0,
             path: None,
             state: EditorState {
                 snapping: true,

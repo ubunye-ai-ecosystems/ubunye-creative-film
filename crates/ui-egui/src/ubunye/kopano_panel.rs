@@ -59,14 +59,22 @@ pub struct KopanoPanel {
     pub control_port: Option<u16>,
     pub share_name: String,
     pub share_account: String,
+    /// The "Invite by email" field under a project this person owns.
+    pub invite_email: String,
     /// "approve" (default) or "live": how the next Share works.
     pub share_mode: String,
-    /// The owner's pick per clash before approving: (project, item key) -> "member" | "main".
-    pub choices: BTreeMap<(String, String), String>,
+    /// The owner's pick per clash before approving: (project, member account, item key) ->
+    /// "member" | "main". Two members can clash on the same setting; each has their own pick.
+    pub choices: BTreeMap<(String, String, String), String>,
     pub join_project: String,
     pub join_from: String,
     /// Shared projects an `attach` was sent for (once each).
     pub attached: BTreeSet<String>,
+    /// The project this window had (`Session::document`) when each shared project was linked
+    /// to it. Opening another project does not move a shared project along with it.
+    pub bound: BTreeMap<String, u64>,
+    /// Shared projects linked to this window while another project is open in it.
+    pub away: BTreeSet<String>,
     /// The last thing copied (tests and agents read it; the clipboard itself is the OS's).
     pub copied: Option<String>,
     /// When the background work last ran (wall ms).
@@ -93,11 +101,14 @@ impl KopanoPanel {
             control_port: None,
             share_name: String::new(),
             share_account: String::new(),
+            invite_email: String::new(),
             share_mode: "approve".to_string(),
             choices: BTreeMap::new(),
             join_project: String::new(),
             join_from: String::new(),
             attached: BTreeSet::new(),
+            bound: BTreeMap::new(),
+            away: BTreeSet::new(),
             copied: None,
             last_tick: f64::NEG_INFINITY,
             recorded: BTreeMap::new(),
@@ -133,6 +144,11 @@ fn set_job(app: &FilmcraftApp, ok: bool, text: impl Into<String>) {
 /// The collaboration commands; `None` for any other id (the engine's `kopano.*` commands, such
 /// as `kopano.items`, fall through to the engine).
 pub fn command(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, p: &Value) -> Option<Result<Value, String>> {
+    // A shared project stays with the project it was shared from: while another project is
+    // open in this window the service may neither read it (nothing of it is sent) nor change it.
+    if matches!(id, "kopano.items" | "kopano.apply" | "kopano.idBlock") && another_project_open(app) {
+        return Some(Err("another project is open in this window".to_string()));
+    }
     Some(match id {
         "kopano.panel" => {
             app.kopano.open = p.get("open").and_then(Value::as_bool).unwrap_or(!app.kopano.open);
@@ -147,11 +163,25 @@ pub fn command(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, p: &Value)
             }
             Ok(json!({"open": app.kopano.open, "advanced": app.kopano.advanced}))
         }
-        "kopano.signIn" => {
-            // ThabangVision sign-in (the device certificate) is not built yet
-            let text = "Sign-in is coming soon.";
-            set_job(app, true, text);
-            Ok(json!({"message": text}))
+        "kopano.signIn" => app.kopano.client.request(ctx, "Opening ThabangVision in your browser…", json!({"op": "sign-in"})).map(|()| json!({"started": true})),
+        "kopano.signInCancel" => app.kopano.client.request(ctx, "Stopping…", json!({"op": "sign-in-cancel"})).map(|()| json!({"started": true})),
+        "kopano.signOut" => app.kopano.client.request(ctx, "Signing out…", json!({"op": "sign-out"})).map(|()| json!({"started": true})),
+        "kopano.signInPage" => match app.kopano.client.state().signing_in.map(|s| s.link).filter(|l| l.starts_with("http")) {
+            Some(link) => {
+                ctx.open_url(egui::OpenUrl::new_tab(&link));
+                Ok(json!({"opened": link}))
+            }
+            None => Err("No sign-in is waiting. Press Sign in with ThabangVision.".to_string()),
+        },
+        "kopano.invite" => invite(app, ctx, p),
+        "kopano.joinShared" => join_shared(app, ctx, p),
+        "kopano.leave" => {
+            let req = json!({"op": "leave", "project": text_param(p, "project", "")});
+            app.kopano.client.request(ctx, "Leaving…", req).map(|()| json!({"started": true}))
+        }
+        "kopano.removePerson" => {
+            let req = json!({"op": "remove-person", "project": text_param(p, "project", ""), "user": text_param(p, "user", "")});
+            app.kopano.client.request(ctx, "Taking them off…", req).map(|()| json!({"started": true}))
         }
         "kopano.share" => share(app, ctx, p),
         "kopano.join" => join(app, ctx, p),
@@ -175,15 +205,17 @@ pub fn command(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, p: &Value)
             app.kopano.share_mode = m;
             Ok(json!({"mode": app.kopano.share_mode}))
         }
+        "kopano.link" => link(app, ctx, p),
         "kopano.approve" => review_op(app, ctx, "approve", p),
         "kopano.decline" => review_op(app, ctx, "decline", p),
         "kopano.view" => review_op(app, ctx, "view", p),
         "kopano.choose" => {
-            let (project, key, pick) = (text_param(p, "project", ""), text_param(p, "key", ""), text_param(p, "pick", "member"));
-            if project.is_empty() || key.is_empty() || (pick != "member" && pick != "main") {
-                return Some(Err("Say which project, which clip setting, and member or main".to_string()));
+            let (project, member, key, pick) =
+                (text_param(p, "project", ""), text_param(p, "member", ""), text_param(p, "key", ""), text_param(p, "pick", "member"));
+            if project.is_empty() || member.is_empty() || key.is_empty() || (pick != "member" && pick != "main") {
+                return Some(Err("Say which project, whose changes, which clip setting, and member or main".to_string()));
             }
-            app.kopano.choices.insert((project, key), pick.clone());
+            app.kopano.choices.insert((project, member, key), pick.clone());
             Ok(json!({"pick": pick}))
         }
         "kopano.setApprover" => {
@@ -236,10 +268,64 @@ fn share(app: &mut FilmcraftApp, ctx: &egui::Context, p: &Value) -> Result<Value
         return Err("The way to work is live or approve".to_string());
     }
     let port = control_port(app)?;
-    let members: Vec<Value> = accounts.iter().map(|a| json!({"account": a, "role": "editor", "lanes": []})).collect();
-    let req = json!({"op": "create-project", "name": name, "app": {"kind": kopano::BINDING, "port": port}, "members": members, "mode": mode});
-    app.kopano.client.request(ctx, "Sharing…", req)?;
+    // an email gets a ThabangVision invite; a bare account id (lab tests) is a member at once
+    let (emails, ids): (Vec<String>, Vec<String>) = accounts.into_iter().partition(|a| a.contains('@'));
+    let members: Vec<Value> = ids.iter().map(|a| json!({"account": a, "role": "editor", "lanes": []})).collect();
+    let mut reqs = vec![json!({"op": "create-project", "name": name, "app": {"kind": kopano::BINDING, "port": port}, "members": members, "mode": mode})];
+    reqs.extend(emails.iter().map(|e| json!({"op": "invite", "project": "$project", "email": e})));
+    app.kopano.client.request_chain(ctx, "Sharing…", reqs)?;
     Ok(json!({"started": true, "controlPort": port}))
+}
+
+/// `kopano.invite {project, email}`: invite someone by email to a project this person owns.
+/// The answer is always "Invite sent." (whether the address has an account is not told).
+fn invite(app: &mut FilmcraftApp, ctx: &egui::Context, p: &Value) -> Result<Value, String> {
+    let project = match text_param(p, "project", "") {
+        s if s.is_empty() => linked_project(app).ok_or("This window is not part of a shared project yet")?,
+        s => s,
+    };
+    let email = text_param(p, "email", &app.kopano.invite_email);
+    if !email.contains('@') {
+        return Err("Type your teammate's email address".to_string());
+    }
+    app.kopano.client.request(ctx, "Inviting…", json!({"op": "invite", "project": project, "email": email}))?;
+    app.kopano.invite_email.clear();
+    Ok(json!({"started": true}))
+}
+
+/// `kopano.joinShared {shared}`: open a project from "Shared with me" in this window, nothing
+/// typed: the service finds the owner's computer and joins from it.
+fn join_shared(app: &mut FilmcraftApp, ctx: &egui::Context, p: &Value) -> Result<Value, String> {
+    let shared = text_param(p, "shared", "");
+    if shared.is_empty() {
+        return Err("Say which shared project".to_string());
+    }
+    let port = control_port(app)?;
+    let req = json!({"op": "join-shared", "shared": shared, "app": {"kind": kopano::BINDING, "port": port}});
+    app.kopano.client.request(ctx, "Opening the shared project…", req)?;
+    Ok(json!({"started": true, "controlPort": port}))
+}
+
+/// A shared project is linked to this window but the person opened another project in it.
+fn another_project_open(app: &FilmcraftApp) -> bool {
+    app.kopano.bound.values().any(|d| *d != app.session.document)
+}
+
+/// `kopano.link {project}`: link this window to a shared project whose window is gone ("Link
+/// this window"). Only the person does this for an unsaved window: nothing guesses it.
+fn link(app: &mut FilmcraftApp, ctx: &egui::Context, p: &Value) -> Result<Value, String> {
+    let project = text_param(p, "project", "");
+    let state = app.kopano.client.state();
+    let Some(shared) = state.projects.iter().find(|x| x.id == project) else {
+        return Err("That shared project is not on this computer".to_string());
+    };
+    let name = shared.name.clone();
+    let port = control_port(app)?;
+    app.kopano.attached.insert(project.clone());
+    app.kopano.bound.insert(project.clone(), app.session.document);
+    app.kopano.away.remove(&project);
+    app.kopano.client.attach(ctx, &project, &name, port);
+    Ok(json!({"started": true}))
 }
 
 /// `kopano.approve|decline|view {project, member, version, show}`: what the review buttons run.
@@ -258,8 +344,8 @@ fn review_op(app: &mut FilmcraftApp, ctx: &egui::Context, op: &str, p: &Value) -
     let busy = match op {
         "approve" => {
             let mut choices = serde_json::Map::new();
-            for ((pid, key), pick) in &app.kopano.choices {
-                if *pid == project {
+            for ((pid, who, key), pick) in &app.kopano.choices {
+                if *pid == project && *who == member {
                     choices.insert(key.clone(), json!(pick));
                 }
             }
@@ -277,7 +363,8 @@ fn review_op(app: &mut FilmcraftApp, ctx: &egui::Context, op: &str, p: &Value) -
     };
     app.kopano.client.request(ctx, busy, req)?;
     if op == "approve" || op == "decline" {
-        app.kopano.choices.retain(|(pid, _), _| *pid != project);
+        // only this member's picks are used up; another member's stay for their review
+        app.kopano.choices.retain(|(pid, who, _), _| *pid != project || *who != member);
     }
     Ok(json!({"started": true}))
 }
@@ -386,6 +473,7 @@ fn field(app: &mut FilmcraftApp, ui: &mut egui::Ui, id: &str, hint: &str, which:
     let text = match which {
         Field::ShareName => &mut app.kopano.share_name,
         Field::ShareAccount => &mut app.kopano.share_account,
+        Field::InviteEmail => &mut app.kopano.invite_email,
         Field::JoinProject => &mut app.kopano.join_project,
         Field::JoinFrom => &mut app.kopano.join_from,
     };
@@ -397,6 +485,7 @@ fn field(app: &mut FilmcraftApp, ui: &mut egui::Ui, id: &str, hint: &str, which:
 enum Field {
     ShareName,
     ShareAccount,
+    InviteEmail,
     JoinProject,
     JoinFrom,
 }
@@ -415,13 +504,14 @@ fn press(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, params: Value) {
     }
 }
 
-/// A clip or track of this window's project in plain words: "C0003.MP4 (clip)", else the key.
+/// A clip or track of this window's project in plain words: its name, else "a clip" (never
+/// the service's key).
 fn item_name(app: &FilmcraftApp, key: &str) -> String {
     let mut parts = key.split('/');
     let (Some("film"), Some(_seq), Some(kind), Some(id)) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
-        return key.to_string();
+        return crate::i18n::t("a clip").to_string();
     };
-    let Ok(id) = id.parse::<u64>() else { return key.to_string() };
+    let Ok(id) = id.parse::<u64>() else { return crate::i18n::t("a clip").to_string() };
     for s in app.session.project.sequences() {
         let Some(seq) = s.as_sequence() else { continue };
         for tr in seq.video_tracks.iter().chain(seq.audio_tracks.iter()) {
@@ -498,7 +588,7 @@ fn review_section(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context
             dim(ui, format!("{} {side}. {}", crate::i18n::t("This window shows"), crate::i18n::t("Editing waits until you press Done.")), &t);
         }
         for (i, c) in e.clashes.iter().enumerate() {
-            let pick = app.kopano.choices.get(&(p.id.clone(), c.key.clone())).cloned().unwrap_or_else(|| "member".to_string());
+            let pick = app.kopano.choices.get(&(p.id.clone(), e.account.clone(), c.key.clone())).cloned().unwrap_or_else(|| "member".to_string());
             dim(
                 ui,
                 format!("{} · {}: {} {} · {} {}", item_name(app, &c.item), kopano::setting_text(&c.setting), crate::i18n::t("yours"), c.main, e.name, c.member),
@@ -506,11 +596,11 @@ fn review_section(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context
             );
             ui.horizontal(|ui| {
                 ui.add_space(8.0);
-                if button(app, ui, &format!("keepMain.{tag}.{i}"), "Keep yours", pick == "main").clicked() {
-                    press(app, ctx, "kopano.choose", json!({"project": p.id, "key": c.key, "pick": "main"}));
+                if button(app, ui, &format!("keepMain.{tag}.{}.{i}", e.account), "Keep yours", pick == "main").clicked() {
+                    press(app, ctx, "kopano.choose", json!({"project": p.id, "member": e.account, "key": c.key, "pick": "main"}));
                 }
-                if button(app, ui, &format!("takeMember.{tag}.{i}"), "Take theirs", pick == "member").clicked() {
-                    press(app, ctx, "kopano.choose", json!({"project": p.id, "key": c.key, "pick": "member"}));
+                if button(app, ui, &format!("takeMember.{tag}.{}.{i}", e.account), "Take theirs", pick == "member").clicked() {
+                    press(app, ctx, "kopano.choose", json!({"project": p.id, "member": e.account, "key": c.key, "pick": "member"}));
                 }
             });
         }
@@ -572,7 +662,7 @@ fn footage_section(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Contex
 /// How often the background work runs.
 const TICK_MS: f64 = 2000.0;
 
-/// This window's project as a [`kopano::Record`]: its file and footage file names.
+/// This window's project as a [`kopano::Record`]: its shared project, file and footage names.
 fn our_record(app: &FilmcraftApp) -> kopano::Record {
     let footage = app
         .session
@@ -584,7 +674,7 @@ fn our_record(app: &FilmcraftApp) -> kopano::Record {
             filmcraft_project::MediaRef::Generator(_) => None,
         })
         .collect();
-    kopano::Record { file: app.session.path.clone(), footage }
+    kopano::Record { share: app.session.project.share_id.clone(), file: app.session.path.clone(), footage }
 }
 
 /// Background work each frame, open or not (only where the window can be reached: the desktop
@@ -608,6 +698,31 @@ pub fn tick(app: &mut FilmcraftApp, ctx: &egui::Context) {
         let Some(port) = p.app_port else { continue };
         if Some(port) == mine {
             let ours = our_record(app);
+            let doc = app.session.document;
+            if *app.kopano.bound.entry(p.id.clone()).or_insert(doc) != doc {
+                // the person opened another project here: the shared one stays linked to its own
+                // file and is not written over; opening that file again links it again
+                let recorded = app.kopano.recorded.get(&p.id).cloned().unwrap_or_else(|| kopano::read_record(&home, &p.id));
+                if kopano::holds(&recorded, &ours) {
+                    app.kopano.bound.insert(p.id.clone(), doc);
+                    app.kopano.away.remove(&p.id);
+                    kopano::lock(&app.kopano.client.shared).note(Some(p.id.clone()), kopano::Said::Reattached { name: p.name.clone() }, now);
+                } else {
+                    if app.kopano.away.insert(p.id.clone()) {
+                        let said = kopano::Said::Away { name: p.name.clone() };
+                        app.ui.status = said.text();
+                        kopano::lock(&app.kopano.client.shared).note(Some(p.id.clone()), said, now);
+                    }
+                    continue;
+                }
+            }
+            if app.session.project.share_id.as_deref() != Some(p.id.as_str()) {
+                // the project remembers which shared project it is (saved with it, kept by
+                // crash recovery), so this window finds it again even before the first save
+                std::sync::Arc::make_mut(&mut app.session.project).share_id = Some(p.id.clone());
+                app.session.revision += 1;
+            }
+            let ours = our_record(app);
             if app.kopano.recorded.get(&p.id) != Some(&ours) {
                 match kopano::write_record(&home, &p.id, &ours) {
                     Ok(()) => {
@@ -623,7 +738,11 @@ pub fn tick(app: &mut FilmcraftApp, ctx: &egui::Context) {
                 app.ui.link_media = None;
                 app.ui.status = crate::i18n::t("The footage is on its way from your teammate; the clips play from proxies first.").to_string();
             }
-        } else if p.app_alive == Some(false) && !app.kopano.attached.contains(&p.id) {
+        } else if p.app_alive != Some(false) {
+            // linked to another window now
+            app.kopano.bound.remove(&p.id);
+            app.kopano.away.remove(&p.id);
+        } else if !app.kopano.attached.contains(&p.id) {
             if !kopano::holds(&kopano::read_record(&home, &p.id), &our_record(app)) {
                 continue;
             }
@@ -675,14 +794,42 @@ fn body(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, state: &
             ui.horizontal(|ui| {
                 dot(ui, true, &t);
                 ui.label(RichText::new(format!("{} {}", crate::i18n::t("Signed in to ThabangVision as"), me.name)).font(Tokens::semibold(12.5)).color(t.text));
+                if button(app, ui, "signOut", "Sign out", false).clicked() {
+                    press(app, ctx, "kopano.signOut", json!({}));
+                }
             });
         }
-        // the service runs, but this computer's ThabangVision sign-in is missing or ran out
+        // the service runs, but this computer is not signed in to ThabangVision
         Some(_) => {
-            dim(ui, crate::i18n::t("Work on this film together with your team."), &t);
-            if button(app, ui, "signIn", "Sign in with ThabangVision", false).clicked() {
-                press(app, ctx, "kopano.signIn", json!({}));
+            match &state.signing_in {
+                Some(si) => {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(crate::i18n::t("Check that the browser shows")).color(t.text));
+                        ui.label(RichText::new(&si.code).font(Tokens::semibold(15.0)).color(t.text));
+                    });
+                    dim(ui, crate::i18n::t("Approve this computer there. This window carries on by itself."), &t);
+                    ui.horizontal(|ui| {
+                        if button(app, ui, "signInPage", "Open the page again", false).clicked() {
+                            press(app, ctx, "kopano.signInPage", json!({}));
+                        }
+                        if button(app, ui, "signInCancel", "Cancel", false).clicked() {
+                            press(app, ctx, "kopano.signInCancel", json!({}));
+                        }
+                    });
+                }
+                None => {
+                    if let Some(m) = &state.sign_in_message {
+                        line(ui, kopano::for_people(m), CAUTION);
+                    }
+                    dim(ui, crate::i18n::t("Work on this film together with your team."), &t);
+                    if button(app, ui, "signIn", "Sign in with ThabangVision", false).clicked() {
+                        press(app, ctx, "kopano.signIn", json!({}));
+                    }
+                }
             }
+            // nothing else works before the sign-in
+            job_line(app, ui, state);
+            return;
         }
         None => {
             ui.horizontal(|ui| {
@@ -693,7 +840,7 @@ fn body(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, state: &
             if let Some(p) = &state.problem
                 && p != kopano::NOT_RUNNING
             {
-                dim(ui, p.clone(), &t);
+                dim(ui, kopano::for_people(p), &t);
             }
         }
     }
@@ -710,17 +857,35 @@ fn body(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, state: &
                 ui.label(RichText::new(crate::i18n::t("in this window")).color(t.text_dim).size(11.0));
             }
         });
-        if p.teammates.is_empty() {
-            dim(ui, crate::i18n::t("No teammate has joined yet."), &t);
+        if app.kopano.away.contains(&p.id) {
+            line(
+                ui,
+                format!("{} {}.", crate::i18n::t("Another project is open in this window. Nothing of it is shared. To keep working together, open"), p.name),
+                CAUTION,
+            );
+        } else if p.app_alive == Some(false) && !app.kopano.attached.contains(&p.id) && !state.projects.iter().any(|x| mine.is_some() && x.app_port == mine) {
+            // its window is gone (Film restarted): the person says which window holds it
+            dim(ui, crate::i18n::t("No window has it open. Open its project file, or link this window if it holds this project."), &t);
+            let tag = kopano::short(&p.id).to_string();
+            if button(app, ui, &format!("link.{tag}"), "Link this window", false).clicked() {
+                press(app, ctx, "kopano.link", json!({"project": p.id}));
+            }
         }
-        for m in &p.teammates {
-            ui.horizontal(|ui| {
-                ui.add_space(8.0);
-                let on = m.online && state.running;
-                dot(ui, on, &t);
-                ui.label(RichText::new(m.label()).color(t.text));
-                ui.label(RichText::new(crate::i18n::t(if on { "online" } else { "offline" })).color(t.text_dim).size(11.5));
-            });
+        if let Some(people) = &p.people {
+            people_section(app, ui, ctx, p, people, state.running);
+        } else {
+            if p.teammates.is_empty() {
+                dim(ui, crate::i18n::t("No teammate has joined yet."), &t);
+            }
+            for m in &p.teammates {
+                ui.horizontal(|ui| {
+                    ui.add_space(8.0);
+                    let on = m.online && state.running;
+                    dot(ui, on, &t);
+                    ui.label(RichText::new(m.label()).color(t.text));
+                    ui.label(RichText::new(crate::i18n::t(if on { "online" } else { "offline" })).color(t.text_dim).size(11.5));
+                });
+            }
         }
         match &p.review {
             Some(r) => review_section(app, ui, ctx, p, r),
@@ -735,12 +900,30 @@ fn body(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, state: &
         }
     }
 
+    if !state.shared_with_me.is_empty() {
+        heading(ui, "Shared with me", &t);
+        let linked = mine.is_some() && state.projects.iter().any(|x| x.app_port == mine);
+        for r in &state.shared_with_me {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(&r.name).font(Tokens::semibold(12.0)).color(t.text));
+                if !linked && button(app, ui, &format!("openShared.{}", kopano::short(&r.shared)), "Open here", false).clicked() {
+                    press(app, ctx, "kopano.joinShared", json!({"shared": r.shared}));
+                }
+            });
+        }
+        if linked {
+            dim(ui, crate::i18n::t("This window already holds a shared project. Open a new window to open one of these."), &t);
+        }
+    }
+
     heading(ui, "Recent activity", &t);
     if state.activity.is_empty() {
         dim(ui, crate::i18n::t("Nothing yet."), &t);
     }
     let now = kopano::now_ms();
-    for a in state.activity.iter().take(SHOWN) {
+    // while another project is open here, "lost touch" lines about the shared one say nothing new
+    let quiet = |a: &&kopano::Activity| !(matches!(a.said, kopano::Said::AppProblem { .. }) && a.project.as_ref().is_some_and(|id| app.kopano.away.contains(id)));
+    for a in state.activity.iter().filter(quiet).take(SHOWN) {
         let times = if a.times > 1 { format!(" · {} times", a.times) } else { String::new() };
         let text = format!("{}{times} · {}", a.said.text(), kopano::ago((now - a.at_ms) / 1000.0));
         let warn = matches!(a.said, kopano::Said::AppProblem { .. } | kopano::Said::OriginalFailed { .. } | kopano::Said::Merged { clashes: 1.., .. });
@@ -792,6 +975,12 @@ fn body(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, state: &
         app.kopano.advanced = !app.kopano.advanced;
     }
 
+    job_line(app, ui, state);
+}
+
+/// The last Share, Join, Invite… and how it went.
+fn job_line(app: &FilmcraftApp, ui: &mut egui::Ui, state: &State) {
+    let t = app.tokens;
     if let Some(job) = &state.job {
         ui.add_space(4.0);
         let color = if job.busy {
@@ -801,7 +990,38 @@ fn body(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, state: &
         } else {
             CAUTION
         };
-        line(ui, job.text.clone(), color);
+        line(ui, if job.ok { job.text.clone() } else { kopano::for_people(&job.text) }, color);
+    }
+}
+
+/// The people on a project shared on ThabangVision: names (never emails), what they may do,
+/// online or not. The owner invites by email and can take someone off; others can leave.
+fn people_section(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, p: &kopano::Project, people: &[kopano::Person], running: bool) {
+    let t = app.tokens;
+    let tag = kopano::short(&p.id).to_string();
+    let owner = people.iter().any(|x| x.me && x.role == "owner");
+    if people.iter().all(|x| x.me) {
+        dim(ui, crate::i18n::t("No one else is on it yet."), &t);
+    }
+    for x in people.iter().filter(|x| !x.me) {
+        ui.horizontal(|ui| {
+            ui.add_space(8.0);
+            let on = x.online && running && !x.invited;
+            dot(ui, on, &t);
+            ui.label(RichText::new(&x.name).color(t.text));
+            ui.label(RichText::new(crate::i18n::t(x.role_text())).color(t.text_dim).size(11.5));
+            if owner && button(app, ui, &format!("remove.{tag}.{}", x.user), "Remove", false).clicked() {
+                press(app, ctx, "kopano.removePerson", json!({"project": p.id, "user": x.user}));
+            }
+        });
+    }
+    if owner {
+        field(app, ui, &format!("inviteEmail.{tag}"), "Teammate's email", Field::InviteEmail);
+        if button(app, ui, &format!("invite.{tag}"), "Invite", false).clicked() {
+            press(app, ctx, "kopano.invite", json!({"project": p.id}));
+        }
+    } else if button(app, ui, &format!("leave.{tag}"), "Leave this project", false).clicked() {
+        press(app, ctx, "kopano.leave", json!({"project": p.id}));
     }
 }
 

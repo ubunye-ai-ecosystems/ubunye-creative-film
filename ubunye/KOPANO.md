@@ -58,18 +58,32 @@ to kopanod's local API (127.0.0.1, `KOPANO_API_PORT`, default 47100, token in `K
 binds this window as `{"kind": "film-control", "port": P}`: the `--control` port, or one the app
 opens on demand at the first Share or Join.
 
-- Signed-in line, shared projects with teammates (green dot when online), recent activity.
-- "Share this project" with "I approve changes" (default) or "Work together live".
+- Sign in with ThabangVision: the code to check in the browser, "Open the page again", Cancel;
+  the service's sentence when the last sign-in ended; Sign out.
+- Shared projects with their people by name and what they may do (owner, can edit, approves,
+  can view, invited; green dot when online), never emails. The owner invites by email and can
+  take someone off ("Remove"); everyone else can "Leave this project". Recent activity.
+- "Shared with me": projects shared on ThabangVision that are not on this computer, each with
+  "Open here" (`join-shared`, nothing typed).
+- "Share this project" with "I approve changes" (default) or "Work together live". An email
+  gets an invite after the project is made (`create-project`, then `invite`); a bare account id
+  (lab tests) is a member at once.
 - Changes to review (View, Before / After / Done, Approve, Decline, Keep yours / Take theirs),
   the member's own state, and the pick for a live clash.
 - Footage: what plays from a proxy, originals arriving, "Get originals" (`fetch-original all`).
   In the Project panel a clip whose footage is on its way says "Playing a proxy", "Original
   arriving" or "On its way" instead of "Media missing", and Film's Link Media prompt is put
   away once the footage is coming.
-- "Share this project" asks for the teammate's email and always answers "Invite sent";
-  teammates are shown by name, never by email.
-- Advanced (testing): device and project ids with Copy, and Join by ids, until email invites
-  reach the teammate by themselves.
+- The answer to an invite is always "Invite sent." (whether the address has an account is not
+  told).
+- Advanced (testing), collapsed: device and project ids with Copy, and Join by ids.
+- A shared project stays with the project it was shared from. Film's project carries the shared
+  project's id (`Project::share_id`, saved with it, kept by crash recovery), and the window
+  links a shared project again only on that id or the same saved file, never by footage names.
+  Opening another project in a shared window stops sharing there (the service may not read or
+  change it) and says so; opening the shared project again links it again. A window whose
+  project has neither is linked only by the person ("Link this window").
+- Errors are shown in plain words; file paths and the service's raw text go to the log.
 
 kopanod's review summary says "photos" for every item; the window counts the changed keys
 itself and says clips and tracks. The word "Kopano" is never on screen.

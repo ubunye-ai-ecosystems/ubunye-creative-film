@@ -1258,6 +1258,11 @@ pub struct Project {
     /// made from, keyed by that item. Schema v14.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub narrations: BTreeMap<ItemId, Narration>,
+    /// Ubunye: the shared project (ThabangVision collaboration) this project belongs to, so a
+    /// window finds it again after a restart even before the first save. Older files load
+    /// without it; a project that was never shared writes nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub share_id: Option<String>,
 }
 
 /// How a sequence is shown in the Timeline panel: its zoom, scroll position and track heights.
@@ -1353,6 +1358,7 @@ impl Project {
             search_bins: Vec::new(),
             source_graphics: BTreeMap::new(),
             narrations: BTreeMap::new(),
+            share_id: None,
         }
     }
 

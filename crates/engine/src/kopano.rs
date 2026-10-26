@@ -337,7 +337,7 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
             if old.is_none() {
                 return Ok(json!({"changed": false}));
             }
-            s.edit("Kopano", |pr, _| {
+            s.edit("Teammate's changes", |pr, _| {
                 let sq = pr.sequence_mut(seq).ok_or_else(|| bad(ID, "sequence vanished"))?;
                 for t in sq.video_tracks.iter_mut().chain(sq.audio_tracks.iter_mut()) {
                     t.items.retain(|c| c.id != clip);
@@ -359,7 +359,7 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
         if old.as_ref().is_some_and(|(t, l)| *t == track && *l == lanes) {
             return Ok(json!({"changed": false}));
         }
-        s.edit("Kopano", |pr, _| {
+        s.edit("Teammate's changes", |pr, _| {
             let sq = pr.sequence_mut(seq).ok_or_else(|| bad(ID, "sequence vanished"))?;
             if track_kind_of(sq, track).is_none() {
                 return Err(bad(ID, format!("track {} is not in sequence {}", track.0, seq.0)));
@@ -381,7 +381,7 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
             if !t.items.is_empty() {
                 return Err(bad(ID, format!("track {} still has clips", track.0)));
             }
-            s.edit("Kopano", |pr, _| {
+            s.edit("Teammate's changes", |pr, _| {
                 let sq = pr.sequence_mut(seq).ok_or_else(|| bad(ID, "sequence vanished"))?;
                 sq.video_tracks.retain(|t| t.id != track);
                 sq.audio_tracks.retain(|t| t.id != track);
@@ -411,7 +411,7 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
             return Ok(json!({"changed": false}));
         }
         let (index, mut t) = join_track(track, &edit, mix.as_ref())?;
-        s.edit("Kopano", |pr, _| {
+        s.edit("Teammate's changes", |pr, _| {
             let sq = pr.sequence_mut(seq).ok_or_else(|| bad(ID, "sequence vanished"))?;
             let mut items = Vec::new();
             for list in [&mut sq.video_tracks, &mut sq.audio_tracks] {
@@ -436,7 +436,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
     vec![
         CommandSpec {
             id: "kopano.idBlock",
-            label: "Kopano Id Block",
+            label: "Shared Project: Id Block",
             menu: &[],
             shortcut: None,
             params: r#"{"block":u64?}"#,
@@ -446,7 +446,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
         },
         CommandSpec {
             id: "kopano.items",
-            label: "Kopano Items",
+            label: "Shared Project: Clips",
             menu: &[],
             shortcut: None,
             params: r#"{"sequence":id?}"#,
@@ -456,7 +456,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
         },
         CommandSpec {
             id: "kopano.apply",
-            label: "Kopano Apply",
+            label: "Shared Project: Apply a Teammate's Change",
             menu: &[],
             shortcut: None,
             params: r#"{"sequence":id,"clip":id?,"track":id?,"edit":obj?,"grade":obj?,"sound":obj?,"mix":obj?,"remove":bool?}"#,

@@ -90,6 +90,33 @@ pub fn home_with(get: impl Fn(&str) -> Option<String>, os: &str) -> Option<PathB
     }
 }
 
+/// What a person reads for an error from the service, the connection or the plumbing of this
+/// window: plain words, with no file paths, protocol names or raw service text (those stay in
+/// the log and in `kopano.status`). The window's own messages are plain already and pass through.
+pub fn for_people(e: &str) -> String {
+    let has = |words: &[&str]| words.iter().any(|w| e.contains(w));
+    let plain = if has(&["works live"]) {
+        "This project works live: there is nothing to approve."
+    } else if has(&["another project is open"]) {
+        "Another project is open in this window."
+    } else if has(&["api.token", "key file", "bad token"]) {
+        "This window could not open collaboration on this computer. Restart Ubunye Film; if it keeps happening, install it again."
+    } else if has(&["KOPANO_HOME", "folder is unknown"]) {
+        "Collaboration is not set up on this computer. Install Ubunye Film again to add it."
+    } else if has(&["--control", "control port"]) {
+        "This window can't be shared yet. Restart Ubunye Film and try again."
+    } else if has(&["addressing", "not reachable", "timed out", "could not reach", "unreachable"]) {
+        "Your teammate's computer could not be reached. Check that they are online, then try again."
+    } else if has(&["hung up", "stopped answering", "unreadable", "refused", "os error", "could not start"]) {
+        "Collaboration stopped answering for a moment. Try again."
+    } else if has(&["kopano", "Kopano", "KOPANO", "/", "\\", "{", "unknown op", "missing", ": "]) {
+        "Something went wrong. Try again in a moment."
+    } else {
+        return e.to_string();
+    };
+    plain.to_string()
+}
+
 /// The API token the service wrote into its home folder.
 pub fn read_token(home: &Path) -> Result<String, String> {
     let f = home.join("api.token");
@@ -116,6 +143,54 @@ pub struct Me {
     pub device: String,
     pub name: String,
     pub account: String,
+}
+
+/// A "Sign in with ThabangVision" waiting for the person in the browser (`hello.signing_in`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct SignIn {
+    pub code: String,
+    pub link: String,
+    pub until_ms: Option<f64>,
+}
+
+/// Someone on a project shared on ThabangVision (`people`): a name, never an email.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Person {
+    pub user: String,
+    pub name: String,
+    /// owner, admin, approver, editor or viewer.
+    pub role: String,
+    /// Invited and not joined yet.
+    pub invited: bool,
+    pub me: bool,
+    pub online: bool,
+}
+
+impl Person {
+    /// "owner", "can edit", "approves", "can view", "invited".
+    pub fn role_text(&self) -> &'static str {
+        if self.invited {
+            return "invited";
+        }
+        match self.role.as_str() {
+            "owner" => "owner",
+            "admin" => "can share",
+            "approver" => "approves",
+            "viewer" => "can view",
+            _ => "can edit",
+        }
+    }
+}
+
+/// A project someone shared with this person on ThabangVision (`shared-projects`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct SharedRow {
+    /// ThabangVision's id for it (what `join-shared` takes).
+    pub shared: String,
+    pub name: String,
+    pub project: String,
+    /// Already on this computer.
+    pub here: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -145,6 +220,9 @@ pub struct Project {
     /// Something answers on `app_port` (checked by the poll thread; `None` = not checked).
     pub app_alive: Option<bool>,
     pub members: Vec<Member>,
+    /// The people on it, when it is shared on ThabangVision (`None`: not shared there, or a
+    /// service without people).
+    pub people: Option<Vec<Person>>,
     /// "live" (every edit goes to everyone) or "approve" (the owner approves changes); `None`
     /// from an older service, which only knows live.
     pub mode: Option<String>,
@@ -517,6 +595,10 @@ pub enum Said {
     UpToDate {
         who: String,
     },
+    /// The person opened another project in the window a shared project is linked to.
+    Away {
+        name: String,
+    },
     /// The service could not read or write this window.
     AppProblem {
         error: String,
@@ -567,6 +649,7 @@ impl Said {
             Said::Merged { who, clashes } => format!("Your changes and {who}'s were put together · {clashes} clashes"),
             Said::UpToDate { who } => format!("Up to date with {who}"),
             Said::Reattached { name } => format!("This window is linked to {name} again"),
+            Said::Away { name } => format!("Another project is open in this window, so {name} is not shared from it"),
             // the service's own words stay in `kopano.status` and the log, not on screen
             Said::AppProblem { .. } => "Lost touch with this window for a moment; it reconnects by itself".to_string(),
             Said::ToReview { who, what } => format!("{who} changed {what} · waiting for your review"),
@@ -626,6 +709,12 @@ pub struct State {
     pub signed_in: bool,
     /// Until when (wall-clock ms), when the service says.
     pub signed_in_until_ms: Option<f64>,
+    /// A sign-in waiting in the browser.
+    pub signing_in: Option<SignIn>,
+    /// Why the last sign-in ended or this computer was signed out (the service's sentence).
+    pub sign_in_message: Option<String>,
+    /// Projects shared with this person that are not on this computer yet.
+    pub shared_with_me: Vec<SharedRow>,
     /// Why it isn't running, or what went wrong talking to it (plain words).
     pub problem: Option<String>,
     pub me: Option<Me>,
@@ -663,6 +752,15 @@ impl State {
         self.me = Some(Me { device: s("device"), name: s("name"), account: s("account") });
         self.signed_in = v.get("signed_in").and_then(Value::as_bool).unwrap_or(false);
         self.signed_in_until_ms = v.get("signed_in_until_ms").and_then(Value::as_f64);
+        self.signing_in = v.get("signing_in").filter(|x| x.is_object()).map(|x| SignIn {
+            code: x.get("code").and_then(Value::as_str).unwrap_or_default().to_string(),
+            link: x.get("link").and_then(Value::as_str).unwrap_or_default().to_string(),
+            until_ms: x.get("until_ms").and_then(Value::as_f64),
+        });
+        self.sign_in_message = v.get("message").and_then(Value::as_str).filter(|m| !m.is_empty()).map(str::to_string);
+        if !self.signed_in {
+            self.shared_with_me.clear();
+        }
         let mut projects = Vec::new();
         for p in v.get("projects").and_then(Value::as_array).into_iter().flatten() {
             let Some(id) = p.get("id").and_then(Value::as_str) else { continue };
@@ -674,6 +772,38 @@ impl State {
         }
         projects.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then(a.id.cmp(&b.id)));
         self.projects = projects;
+    }
+
+    /// Take the reply to `people {project}`.
+    pub fn apply_people(&mut self, project: &str, v: &Value) {
+        let Some(p) = self.projects.iter_mut().find(|p| p.id == project) else { return };
+        if !v.get("shared").is_some_and(Value::is_string) {
+            p.people = None;
+            return;
+        }
+        let s = |x: &Value, k: &str| x.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+        let b = |x: &Value, k: &str| x.get(k).and_then(Value::as_bool).unwrap_or(false);
+        p.people = Some(
+            v.get("people")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|x| Person { user: s(x, "user"), name: s(x, "name"), role: s(x, "role"), invited: s(x, "status") == "invited", me: b(x, "me"), online: b(x, "online") })
+                .collect(),
+        );
+    }
+
+    /// Take the reply to `shared-projects`: what is shared with this person and not here yet.
+    pub fn apply_shared_projects(&mut self, v: &Value) {
+        let s = |x: &Value, k: &str| x.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+        self.shared_with_me = v
+            .get("shared")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|x| !x.get("here").and_then(Value::as_bool).unwrap_or(false))
+            .map(|x| SharedRow { shared: s(x, "shared"), name: s(x, "name"), project: s(x, "project"), here: false })
+            .collect();
     }
 
     /// Take the reply to `status {project}`.
@@ -929,9 +1059,11 @@ pub fn record_path(home: &Path, project: &str) -> Option<PathBuf> {
     is_hex_id(project).then(|| home.join("film").join(format!("{project}.json")))
 }
 
-/// What a window's project is, for [`holds`]: its file (if saved) and its footage file names.
+/// What a window's project is, for [`holds`]: the shared project it belongs to (the project's
+/// `share_id`), its file (if saved) and its footage file names (for the log only).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Record {
+    pub share: Option<String>,
     pub file: Option<String>,
     pub footage: BTreeSet<String>,
 }
@@ -942,7 +1074,7 @@ pub fn write_record(home: &Path, project: &str, r: &Record) -> Result<(), String
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let tmp = f.with_extension("json.tmp");
-    std::fs::write(&tmp, json!({"file": r.file, "footage": r.footage}).to_string()).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, json!({"share": r.share, "file": r.file, "footage": r.footage}).to_string()).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, &f).map_err(|e| e.to_string())
 }
 
@@ -952,18 +1084,20 @@ pub fn read_record(home: &Path, project: &str) -> Record {
     let Ok(text) = std::fs::read_to_string(f) else { return Record::default() };
     let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
     Record {
+        share: v.get("share").and_then(Value::as_str).map(str::to_string),
         file: v.get("file").and_then(Value::as_str).map(str::to_string),
         footage: v.get("footage").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect(),
     }
 }
 
-/// This window holds a shared project when it has the same project file open, or (unsaved) at
-/// least half of the footage recorded for it.
+/// This window holds a shared project when its project carries that shared project's id, or it
+/// has the same project file open. Nothing weaker counts: footage names such as C0001.MP4 repeat
+/// across shoots, so any other window is linked only by the person ("Link this window").
 pub fn holds(recorded: &Record, ours: &Record) -> bool {
-    if let (Some(a), Some(b)) = (&recorded.file, &ours.file) {
-        return same_path(a, b);
+    if recorded.share.is_some() && recorded.share == ours.share {
+        return true;
     }
-    !recorded.footage.is_empty() && recorded.footage.intersection(&ours.footage).count().saturating_mul(2) >= recorded.footage.len()
+    matches!((&recorded.file, &ours.file), (Some(a), Some(b)) if same_path(a, b))
 }
 
 fn same_path(a: &str, b: &str) -> bool {
@@ -1039,6 +1173,10 @@ impl Client {
     }
 
     pub fn request(&mut self, _ctx: &egui::Context, _busy: &str, _req: Value) -> Result<(), String> {
+        Err("Collaboration works in the desktop app only.".to_string())
+    }
+
+    pub fn request_chain(&mut self, _ctx: &egui::Context, _busy: &str, _reqs: Vec<Value>) -> Result<(), String> {
         Err("Collaboration works in the desktop app only.".to_string())
     }
 
@@ -1120,6 +1258,18 @@ mod native {
                 s.apply_hello(&hello);
                 s.projects.iter().map(|p| p.id.clone()).collect()
             };
+            // ThabangVision: what is shared with this person, and who is on each project (a
+            // service without these answers "unknown op": nothing changes)
+            if lock(shared).signed_in
+                && let Ok(v) = call(&mut c, json!({"op": "shared-projects"}))
+            {
+                lock(shared).apply_shared_projects(&v);
+            }
+            for id in &ids {
+                if let Ok(v) = call(&mut c, json!({"op": "people", "project": id})) {
+                    lock(shared).apply_people(id, &v);
+                }
+            }
             for id in ids {
                 // one project's trouble doesn't hide the others
                 if let Ok(st) = call(&mut c, json!({"op": "status", "project": id})) {
@@ -1235,6 +1385,15 @@ mod native {
         /// Run one request (`create-project`, `join`, `approve`, `fetch-original`…) on its own
         /// thread; the outcome lands in [`State::job`]. `busy` is what the panel says meanwhile.
         pub fn request(&mut self, ctx: &egui::Context, busy: &str, req: Value) -> Result<(), String> {
+            self.request_chain(ctx, busy, vec![req])
+        }
+
+        /// Several requests one after the other (Share, then an invite per email). A later
+        /// request whose `project` is "$project" gets the project the first one made. The job
+        /// says what the first one did, or the first error.
+        pub fn request_chain(&mut self, ctx: &egui::Context, busy: &str, reqs: Vec<Value>) -> Result<(), String> {
+            let Some(req) = reqs.first().cloned() else { return Ok(()) };
+            let rest: Vec<Value> = reqs[1..].to_vec();
             self.start(ctx);
             {
                 let mut s = lock(&self.shared);
@@ -1247,10 +1406,23 @@ mod native {
             let op = req.get("op").and_then(Value::as_str).unwrap_or_default().to_string();
             let spawned = std::thread::Builder::new().name("collab-job".into()).spawn(move || {
                 // a join fetches the project from the teammate: up to 30 s to reach them
-                let r = connect(&config, Duration::from_secs(90)).and_then(|mut c| call(&mut c, req));
+                let r = connect(&config, Duration::from_secs(90)).and_then(|mut c| {
+                    let first = call(&mut c, req)?;
+                    let made = first.get("project").and_then(Value::as_str).unwrap_or_default().to_string();
+                    for mut next in rest {
+                        if next.get("project").and_then(Value::as_str) == Some("$project") {
+                            next["project"] = json!(made);
+                        }
+                        call(&mut c, next)?;
+                    }
+                    Ok(first)
+                });
                 let job = match r {
                     Ok(v) => job_done(&op, &v),
-                    Err(e) => Job { busy: false, ok: false, text: e, project: None },
+                    Err(e) => {
+                        log::info!("collaboration: {op} failed: {e}");
+                        Job { busy: false, ok: false, text: e, project: None }
+                    }
                 };
                 lock(&shared).job = Some(job);
                 if let Some(w) = wake {
@@ -1296,6 +1468,21 @@ pub fn job_done(op: &str, v: &Value) -> Job {
             text: "Joined. Your teammate's cut arrives in a few seconds; the clips play from proxies until you get the originals.".to_string(),
             project: v.get("project").and_then(Value::as_str).map(str::to_string),
         },
+        "join-shared" => Job {
+            busy: false,
+            ok: true,
+            text: "Joined. Your teammate's cut arrives in a few seconds; the clips play from proxies until you get the originals.".to_string(),
+            project: v.get("project").and_then(Value::as_str).map(str::to_string),
+        },
+        "sign-in" => match v.get("code").and_then(Value::as_str) {
+            Some(code) => Job { busy: false, ok: true, text: format!("Check that the browser shows {code}."), project: None },
+            None => done("Finish signing in in your browser."),
+        },
+        "sign-in-cancel" => done("Sign-in stopped."),
+        "sign-out" => done("Signed out of ThabangVision on this computer."),
+        "invite" => done("Invite sent."),
+        "leave" => done("You left the project. It stays on this computer but no longer changes."),
+        "remove-person" => done("Taken off the project."),
         "approve" => done("Approved. The changes are in your project."),
         "decline" => done("Declined. Your project stays as it was."),
         "view" => done(match v.pointer("/viewing/side").and_then(Value::as_str) {
