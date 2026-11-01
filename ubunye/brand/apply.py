@@ -272,6 +272,11 @@ WORKFLOWS = [".github/workflows/release.yml", ".github/workflows/packaging-lint.
 NL = "\n"
 PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
     (
+        # the MSI's upgrade identity is ours (identities.toml); check-install-policy.ps1 compares it
+        "packaging/windows/install-policy.json",
+        [('"upgradeCode": "31E6FB14-9DBC-41DD-B24B-26B71FB31B62"', f'"upgradeCode": "{UPGRADE_CODE}"')],
+    ),
+    (
         # upstream's suite folder (Program Files and per-user Programs) is the vendor's, as in Ubunye Light
         "packaging/windows/filmcraft.wxs",
         [('<Directory Id="CraftSuiteFolder" Name="ArtCraft">', f'<Directory Id="CraftSuiteFolder" Name="{VENDOR}">')],
@@ -1007,7 +1012,10 @@ ALLOWED = re.compile(
             r'UPSTREAM_URL = "https://github\.com/storytold/filmcraft"',
             r"\(https://github\.com/storytold/filmcraft\)",
             # git dependencies (upstream's forks of egui and winit, the craft libraries)
+            r'"https://github\.com/storytold/(?:craft-libs|egui\.git|winit\.git)"',
             r'git = "https://github\.com/storytold/(?:craft-libs|egui\.git|winit\.git)"',
+            # our test that no update check targets upstream's organisation
+            r'starts_with\("storytold/"\)',
             # upstream's reusable CI workflows, used by upstream's own workflows
             r"storytold/craft-common-actions/\S*",
             # the dependency-source rule in upstream's Nix workflow

@@ -49,7 +49,9 @@ jobs:
           f="$RUNNER_TEMP/nextest.tar.gz"
           curl -fsSL -o "$f" "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.150/cargo-nextest-0.9.150-$t.tar.gz"
           echo "$sum  $f" | sha256sum -c - 2>/dev/null || echo "$sum  $f" | shasum -a 256 -c -
-          tar zxf "$f" -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+          # relative paths: GNU tar on Windows reads "D:" as a remote host
+          (cd "$RUNNER_TEMP" && tar zxf nextest.tar.gz)
+          mv "$RUNNER_TEMP"/cargo-nextest* "${CARGO_HOME:-$HOME/.cargo}/bin/"
           cargo nextest --version
       - name: Build
         run: cargo build --locked --workspace
@@ -87,7 +89,9 @@ jobs:
           f="$RUNNER_TEMP/nextest.tar.gz"
           curl -fsSL -o "$f" "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.150/cargo-nextest-0.9.150-$t.tar.gz"
           echo "$sum  $f" | sha256sum -c - 2>/dev/null || echo "$sum  $f" | shasum -a 256 -c -
-          tar zxf "$f" -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+          # relative paths: GNU tar on Windows reads "D:" as a remote host
+          (cd "$RUNNER_TEMP" && tar zxf nextest.tar.gz)
+          mv "$RUNNER_TEMP"/cargo-nextest* "${CARGO_HOME:-$HOME/.cargo}/bin/"
           cargo nextest --version
       - run: cargo xtask ci
 

@@ -621,6 +621,10 @@ impl Driver {
             let els = self.ok("ui.elements", json!({"prefix": "collab."}));
             eprintln!("click {id}: {els}");
         }
+        // hover first, as a person does: the press then lands on a widget laid out (and hit-tested)
+        // with the pointer already over it, not on last frame's rect in the same input batch
+        self.ok("ui.move", json!({"id": id}));
+        self.frames(1);
         self.ok("ui.click", json!({"id": id}));
         self.frames(2);
     }

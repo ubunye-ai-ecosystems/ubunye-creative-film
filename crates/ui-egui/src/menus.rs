@@ -503,7 +503,9 @@ pub fn invoke_command(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut
             return Ok(Value::Null);
         }
         "app.checkForUpdates" => {
-            let _ = crate::updates_ui::check(app);
+            // Ubunye: releases are on the product page (downloads.thabangvision.com), not GitHub
+            // releases craft-update could read, so no in-app check: open the page instead.
+            crate::links::open(app, ctx, crate::brand::PRODUCT_URL);
             return Ok(serde_json::Value::Null);
         }
         "app.about" => {
