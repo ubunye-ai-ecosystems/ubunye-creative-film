@@ -36,6 +36,7 @@ mod graphics;
 mod logging;
 #[cfg(target_os = "macos")]
 mod native_menu;
+mod ubunye_collab;
 mod window_raise;
 
 use args::{Cli, Launch};
@@ -148,6 +149,8 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             let mut session = Session::default();
+            // Ubunye: ids from a block of this session's own, so co-editing never clashes (Kopano)
+            session.enable_stable_ids();
             if let Some(dir) = data_dir.clone().or_else(default_data_dir) {
                 let mut cfg = AutosaveConfig::new(dir);
                 cfg.local_offset = local_offset;
@@ -269,6 +272,11 @@ fn main() -> eframe::Result {
                 let rx = control_server::start(port, cc.egui_ctx.clone());
                 app = app.with_control(rx);
             }
+            // Ubunye: Share & Collaborate reaches this window through the control port
+            app.kopano.start_control = Some(control_server::on_demand(control_port, cc.egui_ctx.clone()));
+            app.kopano.control_port = control_port;
+            // Ubunye: start ThabangVision collaboration (kopanod, shipped beside the app) if needed
+            ubunye_collab::start_in_background();
             Ok(Box::new(app))
         }),
     );

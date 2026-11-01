@@ -6,6 +6,9 @@
 //! `Arc` and edits copy-on-write, so undo snapshots and background readers are free.
 //!
 //! Time: timeline positions are sequence ticks; `source_in` is media time.
+//!
+//! Modified by Ubunye AI Ecosystems, 2026: ids from per-session blocks ([`ids`]), so copies of
+//! one project edited on two computers never make the same id.
 
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 
@@ -16,6 +19,7 @@ pub mod find;
 pub mod graphic;
 pub mod graphic_design;
 pub mod gtemplate;
+pub mod ids;
 pub mod keyframe;
 pub mod mask;
 pub mod mixer;
@@ -1231,7 +1235,8 @@ pub struct Project {
     pub settings: ProjectSettings,
     pub root: Bin,
     pub items: BTreeMap<ItemId, ProjectItem>,
-    /// Monotonic id source for all id types.
+    /// Monotonic id source for all id types. Each editing session moves it into its own block
+    /// ([`ids`]), so two computers never hand out the same id.
     pub next_id: u64,
     /// The project's LUT library (Lumetri Input LUT / Creative Look "Browse…"). LUT files are
     /// embedded, so projects render without the original files.
@@ -1253,6 +1258,11 @@ pub struct Project {
     /// made from, keyed by that item. Schema v14.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub narrations: BTreeMap<ItemId, Narration>,
+    /// Ubunye: the shared project (ThabangVision collaboration) this project belongs to, so a
+    /// window finds it again after a restart even before the first save. Older files load
+    /// without it; a project that was never shared writes nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub share_id: Option<String>,
 }
 
 /// How a sequence is shown in the Timeline panel: its zoom, scroll position and track heights.
@@ -1348,6 +1358,7 @@ impl Project {
             search_bins: Vec::new(),
             source_graphics: BTreeMap::new(),
             narrations: BTreeMap::new(),
+            share_id: None,
         }
     }
 
@@ -1360,7 +1371,12 @@ impl Project {
     /// Add an item to a bin (root when None / not found).
     pub fn add_item(&mut self, name: &str, label: Label, kind: ItemKind, bin: Option<BinId>) -> ItemId {
         let id = ItemId(self.alloc_id());
-        let created = id.0;
+        // "Date Created" order: one more than the newest item (ids come from random blocks, so
+        // they no longer grow from one session to the next; see `ids`).
+        let created = match ids::id_block(id.0) {
+            0 => id.0,
+            _ => self.items.values().map(|i| i.created).max().map_or(1, |m| m.saturating_add(1)),
+        };
         self.items.insert(id, ProjectItem { id, name: name.into(), label, kind, metadata: BTreeMap::new(), created, split: SplitMarks::default() });
         if let Some(b) = bin.and_then(|b| self.root.find_bin_mut(b)) {
             b.children.push(BinEntry::Item(id));

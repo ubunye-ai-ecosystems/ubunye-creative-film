@@ -51,6 +51,9 @@ overrides:
       - libxkbcommon
       - (vulkan-loader or libglvnd-egl)
       - alsa-lib
+      # Ubunye: links the shared kopanod (ubunye/packaging/linux/postinst.sh.in); Fedora's
+      # alternatives and openSUSE's update-alternatives both provide it. dpkg has it on Debian.
+      - /usr/sbin/update-alternatives
     recommends:
       - libwayland-client
       - libX11

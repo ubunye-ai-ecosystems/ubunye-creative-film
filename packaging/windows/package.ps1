@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
   Build, sign and package Ubunye Film for Windows.
+  (Modified by Ubunye AI Ecosystems, 2026: UBUNYE_EXTRA_BIN_DIR / UBUNYE_EXTRA_WXS hooks.)
 
 .DESCRIPTION
   Produces, in $env:DIST (default: dist/release):
@@ -87,13 +88,25 @@ $Stage = Join-Path $TargetDir "windows-package\$Arch"
 Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 Copy-Item (Join-Path $Bin 'filmcraft.exe'), (Join-Path $Bin 'filmcraft-cli.exe') $Stage
+# Ubunye: programs shipped beside Film (kopanod, ThabangVision collaboration) and the WiX
+# fragment that installs them (it needs the WiX Util extension). Set by
+# ubunye/packaging/windows/collab-package.ps1; empty otherwise.
+$ExtraExes = @()
+$ExtraWix = @()
+if ($env:UBUNYE_EXTRA_BIN_DIR) {
+  $ExtraExes = @(Get-ChildItem (Join-Path $env:UBUNYE_EXTRA_BIN_DIR '*.exe') | ForEach-Object { Copy-Item $_.FullName $Stage -PassThru } | ForEach-Object FullName)
+  if ($env:UBUNYE_EXTRA_WXS) {
+    Invoke-Native 'wix extension add WixToolset.Util.wixext/5.0.2' { wix extension add -g 'WixToolset.Util.wixext/5.0.2' }
+    $ExtraWix = @($env:UBUNYE_EXTRA_WXS, '-ext', 'WixToolset.Util.wixext/5.0.2', '-d', "CollabBinDir=$Stage")
+  }
+}
 
-& (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'filmcraft.exe') (Join-Path $Stage 'filmcraft-cli.exe')
+& (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'filmcraft.exe') (Join-Path $Stage 'filmcraft-cli.exe') @ExtraExes
 
 # ---- MSI ---------------------------------------------------------------------------------------
 $Msi = Join-Path $Dist "filmcraft-$Version-windows-$Arch.msi"
 Invoke-Native 'wix build' {
-  wix build (Join-Path $PSScriptRoot 'filmcraft.wxs') -arch $Arch `
+  wix build (Join-Path $PSScriptRoot 'filmcraft.wxs') @ExtraWix -arch $Arch `
     -d "Version=$MsiVersion" -d "BinDir=$Stage" -d "IconPath=$(Join-Path $Root 'assets\app-icon\filmcraft.ico')" `
     -o $Msi
 }

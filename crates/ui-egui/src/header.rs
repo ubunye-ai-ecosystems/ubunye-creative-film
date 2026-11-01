@@ -118,12 +118,15 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let wresp = ui.interact(wr, egui::Id::new("hdr-ws-name"), Sense::click());
     app.auto.add("header.workspaceName", wr, &ws);
     p.galley_with_override_text_color(pos2(wr.min.x + 4.0, rect.center().y - wg.size().y / 2.0), wg, if wresp.hovered() { t.text } else { t.text_dim });
+    // Ubunye: Share & Collaborate (two people), left of the workspace name
+    let collab = Rect::from_center_size(pos2(wr.min.x - 20.0, rect.center().y), vec2(28.0, 28.0));
+    crate::ubunye::kopano_panel::header_button(app, ui, collab);
     // Community: a labelled button, always one click away (Ubunye: our community link).
     {
         let label = tl!("Community");
         let g = p.layout_no_wrap(label.to_string(), Tokens::ui(12.0), Color32::WHITE);
         let w = g.size().x + 34.0;
-        let r = Rect::from_min_size(pos2(wr.min.x - w - 14.0, rect.center().y - 12.0), vec2(w, 24.0));
+        let r = Rect::from_min_size(pos2(collab.min.x - w - 10.0, rect.center().y - 12.0), vec2(w, 24.0));
         let resp = ui.interact(r, egui::Id::new("hdr-discord"), Sense::click()).on_hover_text(tl!("Join the Ubunye Community"));
         app.auto.add("header.discord", r, "Join the Ubunye Community");
         ui.painter().rect_filled(r, 12.0, if resp.hovered() { t.accent_hover } else { t.accent });

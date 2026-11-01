@@ -39,10 +39,12 @@ pub struct Badge {
     pub proxy: bool,
     /// Proxies are enabled (the badge is lit).
     pub proxy_on: bool,
+    /// Ubunye: missing here, but on its way from a teammate (`offline_text` says how).
+    pub coming: bool,
 }
 
 pub fn media_badge(app: &FilmcraftApp, it: &filmcraft_project::ProjectItem) -> Badge {
-    let mut b = Badge { offline: false, offline_text: "", proxy: false, proxy_on: false };
+    let mut b = Badge { offline: false, offline_text: "", proxy: false, proxy_on: false, coming: false };
     let target = match &it.kind {
         ItemKind::Subclip { parent, .. } => app.session.project.item(*parent),
         _ => Some(it),
@@ -59,13 +61,21 @@ pub fn media_badge(app: &FilmcraftApp, it: &filmcraft_project::ProjectItem) -> B
     }
     b.proxy = m.proxy.is_some();
     b.proxy_on = app.session.media.use_proxies();
+    // Ubunye: shared footage that is still coming is not "missing"
+    if b.offline
+        && !m.offline
+        && let Some(text) = target.and_then(|t| crate::ubunye::kopano_panel::footage_badge(app, t))
+    {
+        (b.offline_text, b.coming) = (crate::i18n::t(text), true);
+    }
     b
 }
 
 fn paint_badges(ui: &egui::Ui, b: &Badge, at: egui::Pos2, t: &Tokens) {
     let mut x = at.x;
     if b.offline {
-        icons::paint(ui.painter(), Rect::from_center_size(pos2(x + 7.0, at.y), vec2(13.0, 13.0)), Icon::Offline, OFFLINE);
+        let (icon, color) = if b.coming { (Icon::Clock, t.accent) } else { (Icon::Offline, OFFLINE) };
+        icons::paint(ui.painter(), Rect::from_center_size(pos2(x + 7.0, at.y), vec2(13.0, 13.0)), icon, color);
         x += 18.0;
     }
     if b.proxy {
@@ -609,7 +619,7 @@ fn list_bin(app: &mut FilmcraftApp, ui: &mut egui::Ui, bin: &Bin, depth: usize, 
                 Align2::LEFT_CENTER,
                 &it.name,
                 Tokens::ui(lc.font),
-                if badge.offline { OFFLINE } else { t.text },
+                if badge.offline && !badge.coming { OFFLINE } else { t.text },
             );
             if nr.max.x + 40.0 < name_r.max.x {
                 paint_badges(ui, &badge, pos2(nr.max.x + 6.0, r.center().y), &t);
@@ -722,8 +732,13 @@ fn card(app: &mut FilmcraftApp, ui: &mut egui::Ui, r: Rect, id: ItemId, pre: &st
     let badge = media_badge(app, &it);
     if badge.offline {
         let band = Rect::from_min_max(pos2(th.min.x, th.max.y - 20.0), th.max);
-        ui.painter().rect_filled(band, 0.0, Color32::from_rgba_unmultiplied(0x5c, 0x10, 0x16, 230));
-        icons::paint(ui.painter(), Rect::from_center_size(pos2(band.min.x + 12.0, band.center().y), vec2(13.0, 13.0)), Icon::Offline, Color32::WHITE);
+        let (fill, icon) = if badge.coming {
+            (Color32::from_rgba_unmultiplied(0x12, 0x3a, 0x6e, 230), Icon::Clock)
+        } else {
+            (Color32::from_rgba_unmultiplied(0x5c, 0x10, 0x16, 230), Icon::Offline)
+        };
+        ui.painter().rect_filled(band, 0.0, fill);
+        icons::paint(ui.painter(), Rect::from_center_size(pos2(band.min.x + 12.0, band.center().y), vec2(13.0, 13.0)), icon, Color32::WHITE);
         ui.painter().text(pos2(band.min.x + 24.0, band.center().y), Align2::LEFT_CENTER, badge.offline_text, Tokens::ui(10.5), Color32::WHITE);
         app.auto.add(&format!("{pre}.item.{}.offline", id.0), band, badge.offline_text);
     }
@@ -751,7 +766,7 @@ fn card(app: &mut FilmcraftApp, ui: &mut egui::Ui, r: Rect, id: ItemId, pre: &st
             Align2::LEFT_CENTER,
             &it.name,
             Tokens::ui(f - 0.5),
-            if badge.offline { OFFLINE } else { t.text },
+            if badge.offline && !badge.coming { OFFLINE } else { t.text },
         );
     }
     app.auto.add(&format!("{pre}.item.{}", id.0), th, &it.name);
