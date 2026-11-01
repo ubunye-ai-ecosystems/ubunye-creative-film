@@ -25,10 +25,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4            # TODO(M2): pin by SHA
+      - uses: actions/checkout@v7            # TODO(M2): pin by SHA
       # the fonts upstream's gate and release build with (same pin as release.yml); without them
       # the UI tests that draw Japanese, Korean and other scripts have no glyphs
-      - uses: actions/checkout@v4            # TODO(M2): pin by SHA
+      - uses: actions/checkout@v7            # TODO(M2): pin by SHA
         with:
           repository: storytold/craft-fonts
           ref: b076417b5880bd4154bd22f00695b1d28c6bea83
@@ -105,8 +105,8 @@ jobs:
     continue-on-error: true
     timeout-minutes: 150
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: storytold/craft-fonts
           ref: b076417b5880bd4154bd22f00695b1d28c6bea83
@@ -144,7 +144,7 @@ jobs:
     # Blocking since the rebrand was applied (ubunye/REBRANDING.md).
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Rebrand applied, no upstream identity leaks
         shell: bash  # -eo pipefail, so tee keeps the exit status
         run: python3 -I ubunye/brand/apply.py --check | tee -a "$GITHUB_STEP_SUMMARY"
