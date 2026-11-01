@@ -47,6 +47,8 @@ impl FilmcraftApp {
     }
 }
 
+// Ubunye: unused while Help > Check for Updates opens the product page (menus.rs).
+#[allow(dead_code)]
 pub(crate) fn check(app: &mut FilmcraftApp) -> Result<Value, String> {
     #[cfg(not(target_arch = "wasm32"))]
     {
