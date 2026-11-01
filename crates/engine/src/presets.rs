@@ -9,7 +9,7 @@
 //! - **Geometry.** Point parameters and mask paths are in clip pixels; they are scaled by the
 //!   target / source frame-size ratio so a preset made on 4K media lands in the same place on HD.
 //! - **Intrinsic effects** (Motion, Opacity, Time Remapping) replace the target clip's own instance;
-//!   standard effects are added before the intrinsic ones (render order), like `effects.apply`.
+//!   standard effects are added at the end of the clip's effects, like `effects.apply`.
 //! - **Library.** Built-in presets are authored in code ([`builtin_presets`]); user presets persist
 //!   in `<data dir>/effect-presets.json`. Preset files (export/import) are JSON:
 //!   `{"format": "filmcraft.effect-presets", "version": 1, "presets": [EffectPreset…]}`.
@@ -365,18 +365,28 @@ pub fn instantiate(p: &EffectPreset, target: &TrackItem, size: (u32, u32)) -> Ve
     out
 }
 
-/// Put preset effects on a clip: intrinsic ones replace the clip's instance, others are inserted
-/// before the intrinsic effects.
+/// Keep `old`'s keyframes that lie outside the span `new` animates, so presets keyframing the same
+/// parameter at different times (Fade In, then Fade Out) add up instead of replacing each other.
+fn merge_keyframes(new: &mut EffectInstance, old: &EffectInstance) {
+    for (id, p) in new.params.iter_mut() {
+        let (Some(first), Some(last)) = (p.keyframes.first().map(|k| k.time), p.keyframes.last().map(|k| k.time)) else { continue };
+        let Some(o) = old.params.get(id) else { continue };
+        p.keyframes.extend(o.keyframes.iter().filter(|k| k.time < first || k.time > last).cloned());
+        p.keyframes.sort_by_key(|k| k.time);
+    }
+}
+
+/// Put preset effects on a clip: intrinsic ones replace the clip's instance (keeping its keyframes
+/// outside the span the preset animates), others are added at the end, like `effects.apply`.
 pub fn put_effects(it: &mut TrackItem, effects: Vec<EffectInstance>) {
-    for e in effects {
+    for mut e in effects {
         let intrinsic = e.def().is_some_and(|d| d.intrinsic);
         if intrinsic && let Some(slot) = it.effects.iter_mut().find(|x| x.effect == e.effect) {
+            merge_keyframes(&mut e, slot);
             *slot = e;
             continue;
         }
-        let audio = e.def().is_some_and(|d| d.kind == filmcraft_project::EffectKind::Audio);
-        let pos = if audio { it.effects.len() } else { it.effects.iter().position(|x| x.def().is_some_and(|d| d.intrinsic)).unwrap_or(it.effects.len()) };
-        it.effects.insert(pos, e);
+        it.effects.push(e);
     }
 }
 

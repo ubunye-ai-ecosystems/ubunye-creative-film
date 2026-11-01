@@ -4,6 +4,7 @@
 //! |---|---|
 //! | `events.list` / `events.clear` | the Events panel: warnings and errors of commands, background jobs and the auto-save worker ([`EventLog`]) |
 //! | `metadata.get` / `metadata.set` | the Metadata panel: an item's clip and file properties; editable log fields (undoable) |
+//! | `project.notes` / `project.setNotes` | the Project Notes panel: free plain text saved in the project (undoable) |
 //!
 //! The Progress panel uses `jobs.list` / `jobs.cancel`; the Timecode panel and the Reference
 //! Monitor are frontend state only.
@@ -182,7 +183,7 @@ fn tc(t: Tick, rate: filmcraft_time::FrameRate) -> String {
 pub fn metadata_fields(p: &Project, id: ItemId) -> Vec<Field> {
     let Some(it) = p.item(id) else { return Vec::new() };
     let media = match &it.kind {
-        ItemKind::Media(m) => Some(m),
+        ItemKind::Media(m) => Some(m.as_ref()),
         ItemKind::Subclip { parent, .. } => p.item(*parent).and_then(|x| x.as_media()),
         _ => None,
     };
@@ -193,7 +194,7 @@ pub fn metadata_fields(p: &Project, id: ItemId) -> Vec<Field> {
     let mut out = Vec::new();
     let mut add = |section, name: &str, value: String, editable| out.push(Field { section, name: name.to_string(), value, editable });
     add("Clip", "Name", it.name.clone(), true);
-    add("Clip", "Label", it.label.name().to_string(), true);
+    add("Clip", "Label", it.label_value(), true);
     add("Clip", "Media Type", it.type_label().to_string(), false);
     let col = |c: &str| filmcraft_project::find::column_text(p, it, c);
     add("Clip", "Frame Rate", col("Frame Rate"), false);
@@ -299,7 +300,7 @@ fn metadata_set(s: &mut Session, p: &Value) -> Result<Value> {
         if k.trim().is_empty() {
             return Err(bad("metadata.set", "empty field name"));
         }
-        if k.eq_ignore_ascii_case("label") && Label::from_name(v).is_none() {
+        if k.eq_ignore_ascii_case("label") && Label::from_color_name(v).is_none() && filmcraft_project::HexColor::parse(v).is_none() {
             return Err(bad("metadata.set", format!("unknown label `{v}`")));
         }
         if k.eq_ignore_ascii_case("name") && v.trim().is_empty() {
@@ -313,7 +314,13 @@ fn metadata_set(s: &mut Session, p: &Value) -> Result<Value> {
         let it = s.project.item(id).ok_or_else(|| bad("metadata.set", "no such item"))?;
         changes.iter().all(|(k, v)| match k.to_ascii_lowercase().as_str() {
             "name" => it.name == *v,
-            "label" => Label::from_name(v) == Some(it.label),
+            "label" => {
+                if let Some(color) = filmcraft_project::HexColor::parse(v) {
+                    it.custom_label_color == Some(color)
+                } else {
+                    it.custom_label_color.is_none() && Label::from_color_name(v) == Some(it.label)
+                }
+            }
             _ => it.metadata.get(k).map(String::as_str).unwrap_or("") == v.as_str(),
         })
     };
@@ -323,7 +330,12 @@ fn metadata_set(s: &mut Session, p: &Value) -> Result<Value> {
             for (k, v) in &changes {
                 match k.to_ascii_lowercase().as_str() {
                     "name" => it.name = v.trim().to_string(),
-                    "label" => it.label = Label::from_name(v).unwrap_or(it.label),
+                    "label" => {
+                        if let Some(label) = Label::from_color_name(v) {
+                            it.label = label;
+                        }
+                        it.custom_label_color = filmcraft_project::HexColor::parse(v);
+                    }
                     _ if v.is_empty() => {
                         it.metadata.remove(k);
                     }
@@ -336,7 +348,39 @@ fn metadata_set(s: &mut Session, p: &Value) -> Result<Value> {
         })?;
     }
     let it = s.project.item(id).ok_or_else(|| bad("metadata.set", "no such item"))?;
-    Ok(json!({"item": id.0, "name": it.name, "label": it.label.name(), "metadata": it.metadata, "changed": !unchanged}))
+    Ok(json!({"item": id.0, "name": it.name, "label": it.label_value(), "metadata": it.metadata, "changed": !unchanged}))
+}
+
+// ------------------------------------------------------------------------------------ project notes
+
+/// Longest project notes accepted (bytes of UTF-8), so a script or a pasted file cannot grow the
+/// project (and every undo step) without bound.
+pub const MAX_NOTES_BYTES: usize = 1 << 20;
+
+/// `project.notes`: the project notes.
+fn notes_get(s: &mut Session, _: &Value) -> Result<Value> {
+    Ok(json!({"text": s.project.notes}))
+}
+
+/// `project.setNotes {text, merge?}`: replace the project notes as one undo step. Calls with the
+/// same `merge` key and no other edit in between share that step (typing in the panel).
+fn notes_set(s: &mut Session, p: &Value) -> Result<Value> {
+    let text = p.get("text").and_then(Value::as_str).ok_or_else(|| bad("project.setNotes", "need `text` (a string)"))?;
+    if text.len() > MAX_NOTES_BYTES {
+        return Err(bad("project.setNotes", format!("the notes are too long ({} bytes; at most {MAX_NOTES_BYTES})", text.len())));
+    }
+    let changed = s.project.notes != text;
+    if changed {
+        let body = |pr: &mut Project, _: &mut crate::EditorState| {
+            pr.notes = text.to_string();
+            Ok(())
+        };
+        match str_p(p, "merge") {
+            Some(key) => s.edit_merged("Edit Project Notes", &format!("project.notes:{key}"), body)?,
+            None => s.edit("Edit Project Notes", body)?,
+        }
+    }
+    Ok(json!({"text": s.project.notes, "changed": changed}))
 }
 
 // ------------------------------------------------------------------------------------ registry
@@ -368,6 +412,17 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             params: r#"{"item":id?,"clip":id?,"field":"Name|Label|Description|Scene|Shot|Log Note|Comment|Tape Name|Client|Camera Angle|…","value":str} | {"item":id?,"fields":{name:str}}"#,
             enabled: always,
             run: metadata_set,
+            journal: true,
+        },
+        q("project.notes", "Get Project Notes", "{}", notes_get),
+        CommandSpec {
+            id: "project.setNotes",
+            label: "Edit Project Notes",
+            menu: &[],
+            shortcut: None,
+            params: r#"{"text":str,"merge":str?}"#,
+            enabled: always,
+            run: notes_set,
             journal: true,
         },
     ]

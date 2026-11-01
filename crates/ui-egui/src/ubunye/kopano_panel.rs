@@ -163,7 +163,9 @@ pub fn command(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, p: &Value)
             }
             Ok(json!({"open": app.kopano.open, "advanced": app.kopano.advanced}))
         }
-        "kopano.signIn" => app.kopano.client.request(ctx, "Opening ThabangVision in your browser…", json!({"op": "sign-in"})).map(|()| json!({"started": true})),
+        "kopano.signIn" => {
+            app.kopano.client.request(ctx, "Opening ThabangVision in your browser…", json!({"op": "sign-in"})).map(|()| json!({"started": true}))
+        }
         "kopano.signInCancel" => app.kopano.client.request(ctx, "Stopping…", json!({"op": "sign-in-cancel"})).map(|()| json!({"started": true})),
         "kopano.signOut" => app.kopano.client.request(ctx, "Signing out…", json!({"op": "sign-out"})).map(|()| json!({"started": true})),
         "kopano.signInPage" => match app.kopano.client.state().signing_in.map(|s| s.link).filter(|l| l.starts_with("http")) {
@@ -255,8 +257,12 @@ fn linked_project(app: &FilmcraftApp) -> Option<String> {
 /// may join (comma separated; `account` is the same). Without params, the window's fields.
 fn share(app: &mut FilmcraftApp, ctx: &egui::Context, p: &Value) -> Result<Value, String> {
     let name = text_param(p, "name", &app.kopano.share_name);
-    let accounts: Vec<String> =
-        text_param(p, "email", &text_param(p, "account", &app.kopano.share_account)).split([',', ' ', ';']).map(str::trim).filter(|a| !a.is_empty()).map(str::to_string).collect();
+    let accounts: Vec<String> = text_param(p, "email", &text_param(p, "account", &app.kopano.share_account))
+        .split([',', ' ', ';'])
+        .map(str::trim)
+        .filter(|a| !a.is_empty())
+        .map(str::to_string)
+        .collect();
     if name.is_empty() {
         return Err("Give the shared project a name".to_string());
     }
@@ -413,7 +419,7 @@ pub fn paint_icon(p: &egui::Painter, r: Rect, color: Color32) {
 /// The header button (right cluster): opens or closes the window. Returns its width used.
 pub fn header_button(app: &mut FilmcraftApp, ui: &mut egui::Ui, r: Rect) {
     let t = app.tokens;
-    let resp = ui.interact(r, egui::Id::new(("hdr", "collaborate")), Sense::click()).on_hover_text(crate::i18n::t(TITLE));
+    let resp = ui.interact(r, egui::Id::unique(("hdr", "collaborate")), Sense::click()).on_hover_text(crate::i18n::t(TITLE));
     app.auto.add("header.collaborate", r, TITLE);
     if resp.hovered() || app.kopano.open {
         ui.painter().rect_filled(r, 4.0, t.hover);
@@ -481,7 +487,7 @@ fn field(app: &mut FilmcraftApp, ui: &mut egui::Ui, id: &str, hint: &str, which:
         Field::JoinProject => &mut app.kopano.join_project,
         Field::JoinFrom => &mut app.kopano.join_from,
     };
-    let r = ui.add(egui::TextEdit::singleline(text).id(egui::Id::new(("collab-field", id))).hint_text(crate::i18n::t(hint)).desired_width(W - 12.0));
+    let r = ui.add(egui::TextEdit::singleline(text).id(egui::Id::unique(("collab-field", id))).hint_text(crate::i18n::t(hint)).desired_width(W - 12.0));
     app.auto.add(&format!("collab.{id}"), r.rect, hint);
 }
 
@@ -770,7 +776,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
     let screen = ctx.content_rect();
     let x = (screen.right() - W - 40.0).max(screen.left() + 8.0);
     let shown = egui::Window::new(crate::i18n::t(TITLE))
-        .id(egui::Id::new("collab-panel"))
+        .id(egui::Id::unique("collab-panel"))
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
@@ -926,7 +932,8 @@ fn body(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, state: &
     }
     let now = kopano::now_ms();
     // while another project is open here, "lost touch" lines about the shared one say nothing new
-    let quiet = |a: &&kopano::Activity| !(matches!(a.said, kopano::Said::AppProblem { .. }) && a.project.as_ref().is_some_and(|id| app.kopano.away.contains(id)));
+    let quiet =
+        |a: &&kopano::Activity| !(matches!(a.said, kopano::Said::AppProblem { .. }) && a.project.as_ref().is_some_and(|id| app.kopano.away.contains(id)));
     for a in state.activity.iter().filter(quiet).take(SHOWN) {
         let times = if a.times > 1 { format!(" · {} times", a.times) } else { String::new() };
         let text = format!("{}{times} · {}", a.said.text(), kopano::ago((now - a.at_ms) / 1000.0));

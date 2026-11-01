@@ -11,15 +11,16 @@
 //! | `mediaBrowser.select` | the selected files (File ▸ Import from Media Browser uses them) |
 //! | `mediaBrowser.favorite` | Add to / Remove from Favorites |
 //! | `mediaBrowser.clearRecent` | Clear Recent Directories |
-//! | `mediaBrowser.settings` | file types, view (list / thumbnails), columns (Edit Columns…), Import as Image Sequence, Hover Scrub, thumbnail size |
-//! | `mediaBrowser.import` | Import (the selection or `paths`; Project ▸ Ingest settings apply) |
+//! | `mediaBrowser.settings` | file types, view (list / thumbnails), columns (Edit Columns…) and their widths, Import as Image Sequence, Hover Scrub, thumbnail size |
+//! | `mediaBrowser.import` | Import (the selection or `paths`; a folder becomes a bin, its sub-folders bins inside it; Project ▸ Ingest settings apply) |
 //! | `mediaBrowser.openInSource` | Open In Source Monitor (Shift+O) |
 //! | `mediaBrowser.probe` | a file's media properties (frame rate, duration, video / audio info), cached |
 //!
 //! Navigation history and the selection are session state ([`BrowserState`]); Favorites, recent
 //! directories and the view settings are preferences ([`MediaBrowserPrefs`]).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use filmcraft_media::MediaInfo;
 use filmcraft_project::ItemId;
@@ -73,7 +74,11 @@ pub const ALL_COLUMNS: [&str; 10] =
     ["Name", "Media Type", "Size", "Date Modified", "Frame Rate", "Media Duration", "Video Info", "Audio Info", "Video Codec", "Audio Codec"];
 pub const DEFAULT_COLUMNS: [&str; 5] = ["Name", "Frame Rate", "Media Duration", "Video Info", "Size"];
 
-const PROJECT_EXTENSIONS: [&str; 6] = ["fcproj", "edl", "xml", "fcpxml", "otio", "ale"];
+/// Project and interchange files the browser can import: FilmCraft projects and every
+/// interchange document `file.import` reads ([`crate::interchange::EXTENSIONS`], AAF and OMF
+/// included). Avid Log Exchange (`.ale`) is left out: FilmCraft writes it (File ▸ Export) but,
+/// like Premiere, does not read it (#1292).
+const PROJECT_EXTENSIONS: [&str; 8] = ["fcproj", "edl", "xml", "fcpxml", "otio", "aaf", "omf", "omfi"];
 const CAPTION_EXTENSIONS: [&str; 3] = ["srt", "vtt", "scc"];
 const RECENT_MAX: usize = 10;
 
@@ -91,6 +96,8 @@ pub struct MediaBrowserPrefs {
     /// `list` | `thumbnails`.
     pub view: String,
     pub columns: Vec<String>,
+    /// List view column widths (points) the user dragged; the others keep their default width.
+    pub column_widths: BTreeMap<String, f32>,
     pub import_as_image_sequence: bool,
     pub hover_scrub: bool,
     pub thumbnail_size: f32,
@@ -105,6 +112,7 @@ impl Default for MediaBrowserPrefs {
             file_types: "all".into(),
             view: "list".into(),
             columns: DEFAULT_COLUMNS.iter().map(|c| c.to_string()).collect(),
+            column_widths: BTreeMap::new(),
             import_as_image_sequence: false,
             hover_scrub: true,
             thumbnail_size: 120.0,
@@ -124,6 +132,11 @@ pub struct BrowserState {
     /// Probed media properties by path (None = not a readable media file).
     #[serde(skip)]
     pub probes: BTreeMap<String, Option<MediaInfo>>,
+    /// Paths [`probe_background`] is probing, and the results its threads hand back.
+    #[serde(skip)]
+    pub probing: BTreeSet<String>,
+    #[serde(skip)]
+    pub probe_results: Arc<Mutex<Vec<(String, Option<MediaInfo>)>>>,
 }
 
 /// A listed entry with what the browser shows about it.
@@ -401,6 +414,13 @@ fn settings(s: &mut Session, p: &Value) -> Result<Value> {
         }
         mb.columns = cols;
     }
+    if let Some(o) = p.get("columnWidths").and_then(Value::as_object) {
+        for (c, w) in o {
+            let c = ALL_COLUMNS.iter().find(|x| x.eq_ignore_ascii_case(c)).ok_or_else(|| bad("mediaBrowser.settings", format!("unknown column `{c}`")))?;
+            let w = w.as_f64().filter(|w| w.is_finite()).ok_or_else(|| bad("mediaBrowser.settings", format!("width of `{c}` is not a number")))?;
+            mb.column_widths.insert(c.to_string(), (w as f32).clamp(30.0, 800.0));
+        }
+    }
     if let Some(v) = bool_p(p, "importAsImageSequence") {
         mb.import_as_image_sequence = v;
     }
@@ -421,32 +441,134 @@ fn paths_p(s: &Session, p: &Value) -> Vec<String> {
     }
 }
 
-/// `mediaBrowser.import {paths?, bin?, imageSequence?}`: imports files (directories import their
-/// supported files, like dragging a folder in Premiere).
+/// Most folders one import walks, and how deep it goes: a folder import mirrors the tree as bins,
+/// and symlinked folders can loop.
+const FOLDER_IMPORT_MAX_FOLDERS: usize = 4096;
+const FOLDER_IMPORT_MAX_DEPTH: usize = 32;
+
+/// A folder to import as a bin: its name, its files and its sub-folders that hold files.
+struct Folder {
+    name: String,
+    files: Vec<String>,
+    subs: Vec<Folder>,
+}
+
+/// The files the browser shows in `dir` and its sub-folders, as a tree; `None` when the tree
+/// holds none (or `budget` folders were walked already).
+fn walk_folder(services: &dyn Services, dir: &str, depth: usize, budget: &mut usize) -> Option<Folder> {
+    *budget = budget.checked_sub(1)?;
+    let entries = list(services, dir, "all").ok()?;
+    let mut folder = Folder { name: base_name(dir), files: Vec::new(), subs: Vec::new() };
+    for e in entries {
+        if !e.is_dir {
+            folder.files.push(e.path);
+        } else if depth < FOLDER_IMPORT_MAX_DEPTH
+            && let Some(sub) = walk_folder(services, &e.path, depth + 1, budget)
+        {
+            folder.subs.push(sub);
+        }
+    }
+    (!folder.files.is_empty() || !folder.subs.is_empty()).then_some(folder)
+}
+
+/// Add a `file.import` result to the merged one: arrays add up, other values (the Ingest result)
+/// are listed.
+fn merge_import(out: &mut serde_json::Map<String, Value>, r: Value) {
+    let Value::Object(r) = r else { return };
+    for (k, v) in r {
+        let slot = out.entry(k).or_insert_with(|| json!([]));
+        let Value::Array(all) = slot else { continue };
+        match v {
+            Value::Null => {}
+            Value::Array(a) => all.extend(a),
+            other => all.push(other),
+        }
+    }
+}
+
+/// Run `file.import` and merge its result; a failure becomes an error of the merged result.
+fn import_into(s: &mut Session, files: &[String], bin: Option<u64>, out: &mut serde_json::Map<String, Value>) {
+    let mut q = json!({"paths": files, "imageSequence": false});
+    if let Some(b) = bin {
+        q["bin"] = json!(b);
+    }
+    match s.execute("file.import", q) {
+        Ok(r) => merge_import(out, r),
+        Err(e) => merge_import(out, json!({"errors": [e.to_string()]})),
+    }
+}
+
+/// Import a folder as a bin named after it, in `parent`: its files go into the bin, each
+/// sub-folder becomes a bin inside it (Premiere's Media Browser keeps the folder structure).
+fn import_folder(s: &mut Session, folder: &Folder, parent: Option<u64>, out: &mut serde_json::Map<String, Value>) -> Result<()> {
+    let name = folder.name.clone();
+    let bin = s.edit("New Bin", |pr, _| Ok(pr.add_bin(&name, parent.map(filmcraft_project::BinId))))?;
+    merge_import(out, json!({"bins": [bin.0]}));
+    if !folder.files.is_empty() {
+        import_into(s, &folder.files, Some(bin.0), out);
+    }
+    // recursion as deep as the walk went, which is bounded
+    for sub in &folder.subs {
+        import_folder(s, sub, Some(bin.0), out)?;
+    }
+    Ok(())
+}
+
+/// `mediaBrowser.import {paths?, bin?, imageSequence?}`: imports files. A folder becomes a bin
+/// named after it (in `bin`) holding its files, and each sub-folder a bin inside that, as in
+/// Premiere; the result then also lists the new `bins`. Import as Image Sequence takes the first
+/// file instead.
 fn import(s: &mut Session, p: &Value) -> Result<Value> {
     let paths = paths_p(s, p);
     if paths.is_empty() {
         return Err(bad("mediaBrowser.import", "select files in the Media Browser"));
     }
     let seq = bool_p(p, "imageSequence").unwrap_or(s.prefs.media_browser.import_as_image_sequence);
+    let bin = u64_p(p, "bin");
     let mut files = Vec::new();
+    let mut folders = Vec::new();
+    let mut empty = Vec::new();
+    let mut budget = FOLDER_IMPORT_MAX_FOLDERS;
     for path in paths {
-        // a directory imports its media files (not recursive)
         let is_dir = matches!(s.services.list_entries(&path), Some(Ok(_))) && kind_of(&path).is_none();
-        match list(&*s.services, &path, "all") {
-            Ok(entries) if is_dir => files.extend(entries.into_iter().filter(|e| !e.is_dir).map(|e| e.path)),
-            _ => files.push(path),
+        if !is_dir {
+            files.push(path);
+        } else if seq {
+            // an image sequence: the folder's frames
+            match list(&*s.services, &path, "all") {
+                Ok(entries) => files.extend(entries.into_iter().filter(|e| !e.is_dir).map(|e| e.path)),
+                Err(_) => files.push(path),
+            }
+        } else {
+            match walk_folder(&*s.services, &path, 0, &mut budget) {
+                Some(f) => folders.push(f),
+                None => empty.push(path),
+            }
         }
     }
     // an image sequence imports from its first selected frame only
     if seq {
         files.truncate(1);
     }
-    let mut q = json!({"paths": files, "imageSequence": seq});
-    if let Some(b) = u64_p(p, "bin") {
-        q["bin"] = json!(b);
+    if folders.is_empty() {
+        if files.is_empty() && !empty.is_empty() {
+            return Err(bad("mediaBrowser.import", format!("no media files in {}", empty.join(", "))));
+        }
+        let mut q = json!({"paths": files, "imageSequence": seq});
+        if let Some(b) = bin {
+            q["bin"] = json!(b);
+        }
+        return s.execute("file.import", q);
     }
-    s.execute("file.import", q)
+    let mut out = serde_json::Map::new();
+    merge_import(&mut out, json!({"items": [], "errors": empty.iter().map(|e| format!("{e}: no media files")).collect::<Vec<_>>(), "bins": []}));
+    if !files.is_empty() {
+        import_into(s, &files, bin, &mut out);
+    }
+    for f in &folders {
+        import_folder(s, f, bin, &mut out)?;
+    }
+    Ok(Value::Object(out))
 }
 
 /// The project item that already references a file.
@@ -494,6 +616,40 @@ pub fn probe(s: &mut Session, path: &str) -> Option<MediaInfo> {
     info
 }
 
+/// At most this many [`probe_background`] threads at once.
+const PROBE_THREADS: usize = 4;
+
+/// [`probe`] without blocking: an unknown file is probed on a background thread and `None` is
+/// returned until its result is in (big files take seconds to open).
+pub fn probe_background(s: &mut Session, path: &str) -> Option<Option<MediaInfo>> {
+    let done = std::mem::take(&mut *s.browser.probe_results.lock().unwrap_or_else(PoisonError::into_inner));
+    for (p, info) in done {
+        s.browser.probing.remove(&p);
+        s.browser.probes.insert(p, info);
+    }
+    if let Some(v) = s.browser.probes.get(path) {
+        return Some(v.clone());
+    }
+    if cfg!(target_arch = "wasm32") || !kind_of(path).is_some_and(|k| matches!(k, "video" | "audio" | "image")) {
+        return Some(probe(s, path));
+    }
+    if s.browser.probing.contains(path) || s.browser.probing.len() >= PROBE_THREADS {
+        return None;
+    }
+    let (media, services, results, key) = (s.media.clone(), s.services.clone(), s.browser.probe_results.clone(), path.to_string());
+    let run = move || {
+        let info =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| media.probe_file(&key, &*services).ok().map(|src| src.info().clone()))).ok().flatten();
+        results.lock().unwrap_or_else(PoisonError::into_inner).push((key, info));
+    };
+    if std::thread::Builder::new().name("filmcraft-browser-probe".into()).spawn(run).is_ok() {
+        s.browser.probing.insert(path.to_string());
+        None
+    } else {
+        Some(probe(s, path))
+    }
+}
+
 /// The text of a list column for an entry (`probe`: its media properties, when known).
 pub fn column_text(e: &Entry, column: &str, probe: Option<&MediaInfo>) -> String {
     match column {
@@ -532,22 +688,33 @@ fn format_size(b: u64) -> String {
     }
 }
 
-/// `YYYY-MM-DD HH:MM` (UTC) from Unix seconds.
+/// Unix seconds → (proleptic Gregorian year, the same wall-clock instant moved into chrono's range
+/// by whole 400-year cycles). The Gregorian calendar repeats every 400 years (146_097 days), so
+/// month, day and time of day come from chrono and only the year is carried, which keeps every
+/// input exact instead of collapsing out-of-range years to the epoch. `secs` is `u64`, so `days`
+/// (≤ `u64::MAX / 86_400`) always fits an `i64`.
+fn utc_parts(secs: u64) -> (i64, chrono::NaiveDateTime) {
+    use chrono::Datelike;
+    let (days, sod) = ((secs / 86_400) as i64, (secs % 86_400) as i64);
+    let (cycles, rest) = (days.div_euclid(146_097), days.rem_euclid(146_097));
+    // `rest + 719_163` (1970-01-01 is CE day 719_163) is always a valid CE day, and `sod` < 86_400.
+    let date = i32::try_from(rest + 719_163).ok().and_then(chrono::NaiveDate::from_num_days_from_ce_opt);
+    let time = u32::try_from(sod).ok().and_then(|s| chrono::NaiveTime::from_num_seconds_from_midnight_opt(s, 0));
+    match (date, time) {
+        (Some(d), Some(t)) => {
+            let y = i128::from(d.year()) + i128::from(cycles) * 400;
+            (i64::try_from(y).unwrap_or(i64::MAX), d.and_time(t))
+        }
+        _ => (1970, chrono::NaiveDateTime::default()), // unreachable
+    }
+}
+
+/// `YYYY-MM-DD HH:MM` (UTC) from Unix seconds. Years far outside chrono's own range are preserved
+/// (the old hand-rolled conversion kept them) rather than collapsing to the epoch.
 pub fn format_date(secs: u64) -> String {
-    let days = (secs / 86_400) as i64;
-    let rem = secs % 86_400;
-    // civil-from-days (Howard Hinnant's algorithm)
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    format!("{y:04}-{m:02}-{d:02} {:02}:{:02}", rem / 3600, (rem / 60) % 60)
+    let (y, t) = utc_parts(secs);
+    // `{:04}` rather than `%Y`, which writes a `+` before years past 9999.
+    format!("{y:04}-{}", t.format("%m-%d %H:%M"))
 }
 
 fn probe_cmd(s: &mut Session, p: &Value) -> Result<Value> {
@@ -574,7 +741,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
         c(
             "mediaBrowser.settings",
             "Media Browser Settings",
-            r#"{"fileTypes":"all|video|audio|image|project|caption|<ext>"?,"view":"list|thumbnails"?,"columns":[str]?,"importAsImageSequence":bool?,"hoverScrub":bool?,"thumbnailSize":f32?}"#,
+            r#"{"fileTypes":"all|video|audio|image|project|caption|<ext>"?,"view":"list|thumbnails"?,"columns":[str]?,"columnWidths":{str:f32}?,"importAsImageSequence":bool?,"hoverScrub":bool?,"thumbnailSize":f32?}"#,
             settings,
         ),
         c("mediaBrowser.import", "Import", r#"{"paths":[str]?,"bin":binId?,"imageSequence":bool?}"#, import),
@@ -668,4 +835,24 @@ pub fn std_volumes() -> Vec<Volume> {
 pub fn std_home_dir() -> Option<String> {
     let vars = if cfg!(windows) { ["USERPROFILE", "HOME"] } else { ["HOME", "USERPROFILE"] };
     vars.iter().find_map(|v| std::env::var(v).ok().filter(|h| !h.is_empty()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_date_is_utc_minutes() {
+        // Pinned against the previous hand-rolled civil-from-days output.
+        assert_eq!(format_date(0), "1970-01-01 00:00");
+        assert_eq!(format_date(951_782_400), "2000-02-29 00:00");
+        assert_eq!(format_date(1_709_164_800), "2024-02-29 00:00");
+        assert_eq!(format_date(1_790_775_907), "2026-09-30 13:45");
+        // Years past 9999 keep the plain zero-padded year (no `+`).
+        assert_eq!(format_date(253_402_300_800), "10000-01-01 00:00");
+        // Values far beyond chrono's own range are preserved (the old hand-rolled civil-from-days
+        // kept them); they must not collapse to the epoch (reviewer FredApps).
+        assert_eq!(format_date(10_000_000_000_000), "318857-05-20 17:46");
+        assert_eq!(format_date(u64::MAX), "584554051223-11-09 07:00");
+    }
 }

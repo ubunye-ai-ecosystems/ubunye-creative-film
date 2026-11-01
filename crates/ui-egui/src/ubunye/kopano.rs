@@ -788,7 +788,14 @@ impl State {
                 .and_then(Value::as_array)
                 .into_iter()
                 .flatten()
-                .map(|x| Person { user: s(x, "user"), name: s(x, "name"), role: s(x, "role"), invited: s(x, "status") == "invited", me: b(x, "me"), online: b(x, "online") })
+                .map(|x| Person {
+                    user: s(x, "user"),
+                    name: s(x, "name"),
+                    role: s(x, "role"),
+                    invited: s(x, "status") == "invited",
+                    me: b(x, "me"),
+                    online: b(x, "online"),
+                })
                 .collect(),
         );
     }
