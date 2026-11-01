@@ -49,6 +49,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: film-panel-${{ matrix.os }}
+      - name: Japanese font for the language tests (Linux runner has none)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y --no-install-recommends fonts-noto-cjk
       - name: Panel and client tests (ui-egui lib)
         shell: bash
         run: cargo test --locked -p filmcraft-ui-egui --lib --no-fail-fast

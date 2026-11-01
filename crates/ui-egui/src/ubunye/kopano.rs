@@ -1102,8 +1102,8 @@ pub fn holds(recorded: &Record, ours: &Record) -> bool {
 
 fn same_path(a: &str, b: &str) -> bool {
     let norm = |s: &str| {
-        let s = s.replace('\\', "/");
-        if cfg!(windows) { s.to_lowercase() } else { s }
+        // a backslash is a separator on Windows only; elsewhere it is part of a file name
+        if cfg!(windows) { s.replace('\\', "/").to_lowercase() } else { s.to_string() }
     };
     norm(a) == norm(b)
 }
@@ -1406,6 +1406,8 @@ mod native {
             let op = req.get("op").and_then(Value::as_str).unwrap_or_default().to_string();
             let spawned = std::thread::Builder::new().name("collab-job".into()).spawn(move || {
                 // a join fetches the project from the teammate: up to 30 s to reach them
+                // the first request decides; a later one that fails is told after it
+                let mut later: Option<String> = None;
                 let r = connect(&config, Duration::from_secs(90)).and_then(|mut c| {
                     let first = call(&mut c, req)?;
                     let made = first.get("project").and_then(Value::as_str).unwrap_or_default().to_string();
@@ -1413,11 +1415,21 @@ mod native {
                         if next.get("project").and_then(Value::as_str) == Some("$project") {
                             next["project"] = json!(made);
                         }
-                        call(&mut c, next)?;
+                        if let Err(e) = call(&mut c, next) {
+                            log::info!("collaboration: a follow-up request failed: {e}");
+                            later = Some(e);
+                            break;
+                        }
                     }
                     Ok(first)
                 });
                 let job = match r {
+                    Ok(v) if later.is_some() => {
+                        let mut job = job_done(&op, &v);
+                        // the project is shared; only the invite needs doing again
+                        job.text = format!("Shared this project, but an invite did not go out: {}", for_people(later.as_deref().unwrap_or_default()));
+                        job
+                    }
                     Ok(v) => job_done(&op, &v),
                     Err(e) => {
                         log::info!("collaboration: {op} failed: {e}");

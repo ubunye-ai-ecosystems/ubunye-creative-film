@@ -654,6 +654,10 @@ impl Driver {
                 for l in [n.label(), n.value()].into_iter().flatten() {
                     out.borrow_mut().push(l);
                 }
+                // an empty field shows its hint (accessibility placeholder)
+                if let Some(p) = n.placeholder() {
+                    out.borrow_mut().push(p.to_string());
+                }
                 false
             })
             .count();
@@ -803,6 +807,10 @@ fn sharing_with_an_email_sends_an_invite_after_the_project_is_made() {
     assert_eq!((inv["project"].as_str(), inv["email"].as_str()), (Some(NEW_PID), Some("m1@example.com")));
     wait("done", T, || d.app().kopano.client.state().job.is_some_and(|j| !j.busy));
     assert_eq!(d.app().kopano.client.state().job.unwrap().text, "Shared this project. Invite sent.");
+    // a live project takes no invites: said before anything is made
+    let r = d.exec("kopano.share", json!({"name": "Cut 4", "email": "m1@example.com", "mode": "live"}));
+    assert!(r["error"].as_str().unwrap().contains("I approve changes"), "{r}");
+    assert_eq!(fake.requests("create-project").len(), 1);
 }
 
 #[test]

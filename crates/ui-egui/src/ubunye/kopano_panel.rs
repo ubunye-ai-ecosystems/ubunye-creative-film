@@ -270,6 +270,10 @@ fn share(app: &mut FilmcraftApp, ctx: &egui::Context, p: &Value) -> Result<Value
     let port = control_port(app)?;
     // an email gets a ThabangVision invite; a bare account id (lab tests) is a member at once
     let (emails, ids): (Vec<String>, Vec<String>) = accounts.into_iter().partition(|a| a.contains('@'));
+    if mode == "live" && !emails.is_empty() {
+        // the service takes no new people into a live project
+        return Err("Inviting by email works with \"I approve changes\". Choose it, then press Share.".to_string());
+    }
     let members: Vec<Value> = ids.iter().map(|a| json!({"account": a, "role": "editor", "lanes": []})).collect();
     let mut reqs = vec![json!({"op": "create-project", "name": name, "app": {"kind": kopano::BINDING, "port": port}, "members": members, "mode": mode})];
     reqs.extend(emails.iter().map(|e| json!({"op": "invite", "project": "$project", "email": e})));
@@ -912,7 +916,7 @@ fn body(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, state: &
             });
         }
         if linked {
-            dim(ui, crate::i18n::t("This window already holds a shared project. Open a new window to open one of these."), &t);
+            dim(ui, crate::i18n::t("This window already holds a shared project. Open a new Film window to open one of these."), &t);
         }
     }
 

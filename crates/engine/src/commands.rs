@@ -746,6 +746,8 @@ fn build() -> Vec<CommandSpec> {
         cmd!("file.newProject", "Project…", ["File", "New"], Some("Cmd+Alt+N"), r#"{"name":str}"#, always, |s, p| {
             let name = str_p(p, "name").unwrap_or("Untitled").to_string();
             s.project = std::sync::Arc::new(filmcraft_project::Project::new(&name));
+            // another document: a shared project bound to the old one lets go of it
+            s.document += 1;
             crate::kopano::enter_fresh_block(s);
             s.history = Default::default();
             s.history.limit = 200;
@@ -762,6 +764,7 @@ fn build() -> Vec<CommandSpec> {
             let (p, seq) = crate::demo::demo_project(&s.media);
             s.project = std::sync::Arc::new(p);
             crate::kopano::enter_fresh_block(s);
+            s.document += 1;
             s.history = Default::default();
             s.history.limit = 200;
             s.state = crate::Session::default().state;
