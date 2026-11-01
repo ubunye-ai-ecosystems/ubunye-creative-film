@@ -16,7 +16,10 @@ use egui_kittest::kittest::Queryable;
 use filmcraft_engine::Session;
 use serde_json::{Value, json};
 
-use super::kopano::*;
+use super::kopano::{
+    ACTIVITY_KEEP, Client, Config, DEFAULT_API_PORT, Footage, FootageFile, NOT_RUNNING, Record, Review, Said, State, Teammate, ago, api_port_with, app_port,
+    changed_text, for_people, holds, home_with, mb_text, read_record, read_token, record_path, setting_text, short, write_record,
+};
 use super::kopano_panel::KopanoPanel;
 use crate::FilmcraftApp;
 use crate::control::ControlRequest;
@@ -400,9 +403,11 @@ fn serve(c: TcpStream, got: &Mutex<Vec<Value>>, stop: &AtomicBool, data: &FakeDa
                     {"user": "u-m1", "name": "Member1", "role": "editor", "status": "active", "me": member, "online": true, "on_project": true},
                     {"user": "u-bob", "name": "Bob", "role": "editor", "status": "invited", "me": false, "online": false, "on_project": false}]})
             }
-            "shared-projects" if data.tv.load(Ordering::SeqCst) => json!({"mine": [{"shared": "tv-1", "name": "Cable way", "project": PID, "role": "owner", "status": "active", "here": true}],
+            "shared-projects" if data.tv.load(Ordering::SeqCst) => {
+                json!({"mine": [{"shared": "tv-1", "name": "Cable way", "project": PID, "role": "owner", "status": "active", "here": true}],
                 "shared": [{"shared": "tv-2", "name": "Sound mix", "project": NEW_PID, "role": "editor", "status": "invited", "here": false},
-                           {"shared": "tv-3", "name": "Already here", "project": PID, "role": "editor", "status": "active", "here": true}]}),
+                           {"shared": "tv-3", "name": "Already here", "project": PID, "role": "editor", "status": "active", "here": true}]})
+            }
             "invite" => json!({"message": "Invite sent."}),
             "join-shared" => json!({"project": NEW_PID, "name": "Sound mix"}),
             "leave" => json!({"left": true}),
@@ -616,6 +621,10 @@ impl Driver {
             let els = self.ok("ui.elements", json!({"prefix": "collab."}));
             eprintln!("click {id}: {els}");
         }
+        // hover first, as a person does: the press then lands on a widget laid out (and hit-tested)
+        // with the pointer already over it, not on last frame's rect in the same input batch
+        self.ok("ui.move", json!({"id": id}));
+        self.frames(1);
         self.ok("ui.click", json!({"id": id}));
         self.frames(2);
     }
@@ -760,7 +769,12 @@ fn the_owner_sees_people_by_name_invites_by_email_and_takes_someone_off() {
     plain(&s);
     assert!(!s.contains('@') && !s.contains("u-m1"), "no emails or user ids: {s}");
     let tag = short(PID).to_string();
-    d.type_into(&format!("collab.inviteEmail.{tag}"), "bob@example.com");
+    // a click on the field can land while the window still moves (a busy test machine): type again
+    let t0 = Instant::now();
+    while d.app().kopano.invite_email != "bob@example.com" {
+        assert!(t0.elapsed() < T, "typing into collab.inviteEmail.{tag} did nothing");
+        d.type_into(&format!("collab.inviteEmail.{tag}"), "bob@example.com");
+    }
     d.click_until(&format!("collab.invite.{tag}"), || fake.requests("invite").len() == 1);
     let inv = &fake.requests("invite")[0];
     assert_eq!((inv["project"].as_str(), inv["email"].as_str()), (Some(PID), Some("bob@example.com")));

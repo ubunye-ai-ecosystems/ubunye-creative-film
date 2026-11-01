@@ -272,6 +272,80 @@ WORKFLOWS = [".github/workflows/release.yml", ".github/workflows/packaging-lint.
 NL = "\n"
 PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
     (
+        # the MSI's upgrade identity is ours (identities.toml); check-install-policy.ps1 compares it
+        "packaging/windows/install-policy.json",
+        [('"upgradeCode": "31E6FB14-9DBC-41DD-B24B-26B71FB31B62"', f'"upgradeCode": "{UPGRADE_CODE}"')],
+    ),
+    (
+        # upstream's suite folder (Program Files and per-user Programs) is the vendor's, as in Ubunye Light
+        "packaging/windows/filmcraft.wxs",
+        [('<Directory Id="CraftSuiteFolder" Name="ArtCraft">', f'<Directory Id="CraftSuiteFolder" Name="{VENDOR}">')],
+    ),
+    (
+        "packaging/windows/install-policy.wxi",
+        [
+            (f"\\ArtCraft\\{NAME}\\", f"\\{VENDOR}\\{NAME}\\"),
+            ("New copies use the ArtCraft folder under Programs.", f"New copies use the {VENDOR} folder under Programs."),
+        ],
+    ),
+    (
+        "packaging/windows/check-install-policy.ps1",
+        [
+            ("$dirs['CraftSuiteFolder'][1] -ne 'ArtCraft'", f"($dirs['CraftSuiteFolder'][1] -split '\\|')[-1] -ne '{VENDOR}'"),
+            ("under the per-user ArtCraft suite root.", f"under the per-user {VENDOR} suite root."),
+            ("'PASS ArtCraft Launcher:", f"'PASS {VENDOR} Launcher:"),
+            ("$directories['CraftSuiteFolder'][1] -ne 'ArtCraft') { throw 'Expected the app under the ArtCraft suite folder.' }",
+             f"($directories['CraftSuiteFolder'][1] -split '\\|')[-1] -ne '{VENDOR}') {{ throw 'Expected the app under the {VENDOR} suite folder.' }}"),
+            ('"ArtCraft\\$($policy.name)"', f'"{VENDOR}\\$($policy.name)"'),
+            ('"Programs\\ArtCraft\\$($policy.name)"', f'"Programs\\{VENDOR}\\$($policy.name)"'),
+        ],
+    ),
+    (
+        "packaging/windows/INSTALLATION.md",
+        [("`Programs\\ArtCraft\\<App>`", f"`Programs\\{VENDOR}\\<App>`")],
+    ),
+    (
+        # upstream's app-store manifest names the icon by upstream's app id
+        "omastore.toml",
+        [(f'icon = "assets/app-icon/hicolor/256x256/apps/{UPSTREAM_ID}.png"', f'icon = "assets/app-icon/hicolor/256x256/apps/{APP_ID}.png"')],
+    ),
+    (
+        "packaging/linux/flatpak-oci.sh",
+        [
+            ("#   REGISTRY       Target registry image (default: ghcr.io/storytold/filmcraft)", "#   REGISTRY       Target registry image (default: ghcr.io/ubunye-ai-ecosystems/ubunye-creative-film)"),
+            ('REGISTRY="${REGISTRY:-ghcr.io/storytold/filmcraft}"', 'REGISTRY="${REGISTRY:-ghcr.io/ubunye-ai-ecosystems/ubunye-creative-film}"'),
+            ('AUTH_ARGS=(--dest-creds "${GITHUB_ACTOR:-storytold}:$GITHUB_TOKEN")', 'AUTH_ARGS=(--dest-creds "${GITHUB_ACTOR:-ubunye-ai-ecosystems}:$GITHUB_TOKEN")'),
+        ],
+    ),
+    (
+        # the ArtCraft Launcher's versions folder: no launcher installs Ubunye Film
+        f"packaging/linux/flatpak/{APP_ID}.yml",
+        [("  - --filesystem=xdg-data/ArtCraft/versions:ro" + NL, "  # Ubunye: no launcher versions folder (upstream mounts its launcher's one here)" + NL)],
+    ),
+    (
+        f"packaging/linux/flatpak/{APP_ID}.bundle.yml",
+        [("  - --filesystem=xdg-data/ArtCraft/versions:ro" + NL, "  # Ubunye: no launcher versions folder (upstream mounts its launcher's one here)" + NL)],
+    ),
+    (
+        ".github/ISSUE_TEMPLATE/config.yml",
+        [
+            ("url: https://github.com/storytold/filmcraft/blob/main/SECURITY.md", f"url: {SOURCE_URL}/blob/develop/ubunye/SECURITY.md"),
+            ("url: https://discord.gg/artcraft", f"url: {ISSUES_URL}"),
+        ],
+    ),
+    (
+        ".github/ISSUE_TEMPLATE/bug_report.yml",
+        [("[SECURITY.md](https://github.com/storytold/filmcraft/blob/main/SECURITY.md)", f"[SECURITY.md]({SOURCE_URL}/blob/develop/ubunye/SECURITY.md)")],
+    ),
+    (
+        ".github/ISSUE_TEMPLATE/feature_request.yml",
+        [("[community chat](https://discord.gg/artcraft)", f"[issues]({ISSUES_URL})")],
+    ),
+    (
+        "apps/filmcraft/src/native_menu.rs",
+        [('"FilmCraft Edit menu is unavailable"', f'"{NAME} Edit menu is unavailable"')],
+    ),
+    (
         "Cargo.toml",
         [('repository = "https://github.com/storytold/filmcraft"', f'repository = "{SOURCE_URL}"')],
     ),
@@ -284,7 +358,7 @@ PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
         [("# ArtCraft wordmark (PNG) for the About dialog and Home screen.", "# Our mark (PNG, crate::brand) for the About dialog and Home screen.")],
     ),
     (
-        "crates/ui-egui/src/i18n/mod.rs",
+        "crates/ui-egui/src/i18n.rs",
         [
             # t() and tr_ctx() draw text; Language::tr stays a pure catalog lookup (menu_items and
             # the catalog tests use it with English keys).
@@ -299,7 +373,7 @@ PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
         ],
     ),
     (
-        "crates/ui-egui/src/lib.rs",
+        "crates/ui-egui/src/app/frame.rs",
         [
             (
                 "let hint = if !self.ui.status.is_empty() { self.ui.status.clone() } else { self.hint_text() };",
@@ -369,8 +443,8 @@ PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
                 + '    uic!("help.appPage", "FilmCraft on thabangvision.com", ["Help"], None),' + NL,
             ),
             (
-                '    let label = if it.checked.is_some() { format!("      {}", it.label) } else { it.label.clone() };',
-                '    let label = crate::brand::localize_owned(if it.checked.is_some() { format!("      {}", it.label) } else { it.label.clone() });',
+                '    let label = if it.checked.is_some() || swatch.is_some() { format!("{GUTTER}{}", it.label) } else { it.label.clone() };',
+                '    let label = crate::brand::localize_owned(if it.checked.is_some() || swatch.is_some() { format!("{GUTTER}{}", it.label) } else { it.label.clone() });',
             ),
         ],
     ),
@@ -492,7 +566,12 @@ PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
     (
         # the demo project's name is shown in the header and the Project panel
         "crates/engine/src/demo.rs",
-        [('Project::new("FilmCraft Demo")', f'Project::new("{NAME} Demo")')],
+        [('Project::new("FilmCraft – Demo Project")', f'Project::new("{NAME} Demo Project")')],
+    ),
+    (
+        # upstream's test of that name
+        "crates/engine/src/tests.rs",
+        [('assert_eq!(s.project.name, "FilmCraft – Demo Project");', f'assert_eq!(s.project.name, "{NAME} Demo Project");')],
     ),
     (
         "crates/automation/src/server.rs",
@@ -508,6 +587,11 @@ PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
             ("  --data-dir <dir>              FilmCraft data directory for user export presets (headless;", f"  --data-dir <dir>              {NAME} data directory for user export presets (headless;"),
             ('outln!("filmcraft-cli {}", env!("CARGO_PKG_VERSION"))', f'outln!("filmcraft-cli {{}} ({NAME})", env!("CARGO_PKG_VERSION"))'),
         ],
+    ),
+    (
+        # upstream's test of that version line
+        "apps/filmcraft-cli/tests/it/cli.rs",
+        [('let want = format!("filmcraft-cli {}\\n", env!("CARGO_PKG_VERSION"));', f'let want = format!("filmcraft-cli {{}} ({NAME})\\n", env!("CARGO_PKG_VERSION"));')],
     ),
     (
         "apps/filmcraft-web/src/api.rs",
@@ -533,7 +617,8 @@ PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
             (f'const APP_ID: &str = "{UPSTREAM_ID}";', "const APP_ID: &str = filmcraft_ui_egui::brand::APP_ID;"),
             ('.set_title("FilmCraft")', ".set_title(filmcraft_ui_egui::brand::NAME)"),
             ('.with_title("FilmCraft")', ".with_title(filmcraft_ui_egui::brand::NAME)"),
-            ("    let started = eframe::run_native(" + NL + '        "FilmCraft",' + NL, "    let started = eframe::run_native(" + NL + "        filmcraft_ui_egui::brand::NAME," + NL),
+            ('eframe::run_native("FilmCraft", options,', "eframe::run_native(filmcraft_ui_egui::brand::NAME, options,"),
+            (f"`packaging/linux/{UPSTREAM_ID}.desktop`", f"`packaging/linux/{APP_ID}.desktop`"),
             ('log::info!("FilmCraft {} ({} {})", env!', 'log::info!("{} {} ({} {})", filmcraft_ui_egui::brand::NAME, env!'),
             (
                 'let msg = format!("FilmCraft could not start its window: {e}\\n\\nUpdating the graphics driver usually fixes this.");',
@@ -547,10 +632,15 @@ PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
         "apps/filmcraft/src/native_menu.rs",
         [
             ('Submenu::new("FilmCraft", true)', "Submenu::new(filmcraft_ui_egui::brand::NAME, true)"),
-            ('MenuItem::with_id("app.about", "About FilmCraft", true, None)', 'MenuItem::with_id("app.about", format!("About {}", filmcraft_ui_egui::brand::NAME), true, None)'),
-            ('MenuItem::with_id("help.discord", "Join the ArtCraft Discord…", true, None)', 'MenuItem::with_id("help.discord", "Join the Ubunye Community…", true, None)'),
-            ("MenuItem::with_id(it.id.clone(), &it.label, true,", "MenuItem::with_id(it.id.clone(), filmcraft_ui_egui::brand::localize(&it.label), true,"),
-            ("mi.set_text(&it.label);", "mi.set_text(filmcraft_ui_egui::brand::localize(&it.label));"),
+            ("|i| i.label.clone())", "|i| filmcraft_ui_egui::brand::localize_owned(i.label.clone()))"),
+            ('label("app.about", "About FilmCraft")', f'label("app.about", "About {NAME}")'),
+            ('label("help.discord", "Join the ArtCraft Discord…")', 'label("help.discord", "Join the Ubunye Community…")'),
+            ("MenuItem::with_id(it.id.clone(), label, it.enabled,", "MenuItem::with_id(it.id.clone(), filmcraft_ui_egui::brand::localize(&label), it.enabled,"),
+            ("MenuItem::with_id(it.id.clone(), &it.label, it.enabled,", "MenuItem::with_id(it.id.clone(), filmcraft_ui_egui::brand::localize(&it.label), it.enabled,"),
+            (
+                "mi.set_text(if it.id.starts_with(\"app.settings.\") { it.label.trim_end_matches('…') } else { &it.label });",
+                "mi.set_text(filmcraft_ui_egui::brand::localize(if it.id.starts_with(\"app.settings.\") { it.label.trim_end_matches('…') } else { &it.label }));",
+            ),
         ],
     ),
     (
@@ -745,6 +835,8 @@ alongside the suite's photo and photo-library tools. Questions, bug reports and 
 """
 
 README_REGEX = [
+    (r"  <a href=\"https://sonarcloud\.io/project/overview\?id=storytold_filmcraft\">[^\n]*\n", ""),
+    (r"  <a href=\"https://coderabbit\.ai\">[^\n]*storytold/filmcraft[^\n]*\n", ""),
     # upstream's logo block and title (everything before and including the <h1>)
     (r"\A.*?<h1 align=\"center\">FilmCraft</h1>\n", README_HEADER),
     (r"  By the ArtCraft team\.\n", "  Based on FilmCraft by the ArtCraft team.\n"),
@@ -889,8 +981,8 @@ def apply(run: Run) -> None:
             run.put_text(ROOT / src.relative_to(overlay), template(read(src).replace("\r\n", "\n")))
     # 5. locales
     rows = load_locale_rows()
-    for lang in ["es", "ja", "pt-br", "uk", "zh-cn"]:
-        run.update(ROOT / f"crates/ui-egui/src/i18n/{lang}.tsv", locale_fn(rows.get(lang, [])))
+    for cat in sorted((ROOT / "crates/ui-egui/src/i18n").glob("*.tsv")):
+        run.update(cat, locale_fn(rows.get(cat.stem, [])))
     # 6. icons
     icons(run)
     # 7. README, NOTICE, ATTRIBUTION (append only)
@@ -919,13 +1011,28 @@ ALLOWED = re.compile(
             r'UPSTREAM_URL: &str = "https://github\.com/storytold/filmcraft"',
             r'UPSTREAM_URL = "https://github\.com/storytold/filmcraft"',
             r"\(https://github\.com/storytold/filmcraft\)",
+            # git dependencies (upstream's forks of egui and winit, the craft libraries)
+            r'"https://github\.com/storytold/(?:craft-libs|egui\.git|winit\.git)"',
+            r'git = "https://github\.com/storytold/(?:craft-libs|egui\.git|winit\.git)"',
+            # our test that no update check targets upstream's organisation
+            r'starts_with\("storytold/"\)',
+            # upstream's reusable CI workflows, used by upstream's own workflows
+            r"storytold/craft-common-actions/\S*",
+            # the dependency-source rule in upstream's Nix workflow
+            r"git\+https://github\.com/storytold/",
+            r"outside github\.com/storytold",
+            r"come from storytold",
+            # upstream's shared translation catalogues (credited in the attribution)
+            r"storytold/craft-i18n",
         ]
     )
 )
 # Kept as upstream wrote them: licences, notices, upstream docs and history, credits, our layer.
 SKIP_PREFIX = ("docs/", "ubunye/", "contributors/", "LICENSE", "NOTICE", "ATTRIBUTION.md", "UPSTREAM", ".github/workflows/release.yml", ".github/workflows/ubunye-",
                # release signing scripts: left as upstream wrote them until the owner approves
-               "packaging/windows/sign.ps1", "packaging/macos/import-cert.sh")
+               "packaging/windows/sign.ps1", "packaging/macos/import-cert.sh",
+               # upstream-only CI (Windows ARM64 installer smoke test of upstream's MSI layout)
+               ".github/workflows/windows-arm64.yml")
 TEXT_EXT = {".rs", ".toml", ".md", ".html", ".js", ".mjs", ".json", ".yml", ".yaml", ".sh", ".ps1", ".py", ".xml", ".in", ".desktop", ".wxs", ".tsv", ".plist", ".attribution", ".txt", ".svg", ""}
 # Files whose user-visible strings do not pass through brand::localize: no product "FilmCraft"
 # outside comments.
@@ -976,7 +1083,7 @@ def leaks(run: Run) -> None:
             run.problems.append(f"MISSING {f}")
             continue
         for n, line in enumerate(read(p).splitlines(), 1):
-            if COMMENT.match(line) or "i18n::t(" in line:
+            if COMMENT.match(line) or "i18n::t(" in line or re.search(r"(?<![A-Za-z0-9_])t\(\"", line):
                 continue
             stripped = line
             for ph in PROTECT:
@@ -992,9 +1099,9 @@ def leaks(run: Run) -> None:
         if NAME_RE.search(line):
             run.problems.append(f"NAME README.md (after header) line {n}: {line.strip()[:140]}")
     # the run-time renaming hook and the brand layer are in place
-    mod = read(ROOT / "crates/ui-egui/src/i18n/mod.rs")
+    mod = read(ROOT / "crates/ui-egui/src/i18n.rs")
     if mod.count("crate::brand::localize(") < 2:
-        run.problems.append("HOOK crates/ui-egui/src/i18n/mod.rs no longer calls crate::brand::localize")
+        run.problems.append("HOOK crates/ui-egui/src/i18n.rs no longer calls crate::brand::localize")
     for f in files:
         if f.endswith(".rs") and not f.startswith("ubunye/") and "docs/brand/" in read(ROOT / f):
             run.problems.append(f"LEAK {f}: refers to docs/brand/ (ArtCraft marks)")

@@ -40,7 +40,7 @@ use filmcraft_project::{ClipId, ItemKind, ParamValue, Sequence, TrackId, TrackKi
 use filmcraft_time::Tick;
 use serde_json::{Value, json};
 
-use crate::commands::{CommandSpec, always, bad, has_selection, has_seq, item_p, time_p, with_links};
+use crate::commands::{CommandSpec, always, bad, has_selection, has_seq, item_p, slip_together, time_p, with_links};
 use crate::{EngineError, Result, Session};
 
 type Run = fn(&mut Session, &Value) -> Result<Value>;
@@ -100,15 +100,14 @@ fn go_to_selected(s: &mut Session, end: bool) -> Result<Value> {
     Ok(json!({"time": s.playhead().0}))
 }
 
-/// Reveal Nested Sequence: open the nested sequence of the selected clip (or the topmost nested
-/// clip under the playhead on a targeted track) with its playhead on the matching frame.
-fn reveal_nested(s: &mut Session) -> Result<Value> {
+/// The clip Reveal Nested Sequence opens: the first selected nested sequence clip, else the
+/// topmost one under the playhead on a targeted track.
+fn nested_to_reveal(s: &Session) -> Option<filmcraft_project::TrackItem> {
     let ph = s.playhead();
     let tg = s.targeting().targeted;
-    let seq = s.active_sequence().ok_or(EngineError::NoSequence)?;
+    let seq = s.active_sequence()?;
     let is_nest = |it: &filmcraft_project::TrackItem| s.project.sequence(it.item).is_some();
-    let pick = s
-        .state
+    s.state
         .selection
         .iter()
         .filter_map(|c| seq.find_item(*c).map(|(_, i)| i))
@@ -116,7 +115,21 @@ fn reveal_nested(s: &mut Session) -> Result<Value> {
         .or_else(|| {
             seq.video_tracks.iter().rev().chain(seq.audio_tracks.iter()).filter(|t| tg.contains(&t.id)).filter_map(|t| t.item_at(ph)).find(|i| is_nest(i))
         })
-        .ok_or_else(|| EngineError::Other("select a nested sequence clip".into()))?;
+        .cloned()
+}
+
+/// Reveal Nested Sequence is enabled when there is a nested clip to reveal, so the Timeline's
+/// clip menu and the Sequence menu grey it out on plain clips instead of failing when chosen.
+fn has_nested_to_reveal(s: &Session) -> std::result::Result<(), String> {
+    has_seq(s)?;
+    nested_to_reveal(s).map(|_| ()).ok_or_else(|| "select a nested sequence clip".into())
+}
+
+/// Reveal Nested Sequence: open the nested sequence of the selected clip (or the topmost nested
+/// clip under the playhead on a targeted track) with its playhead on the matching frame.
+fn reveal_nested(s: &mut Session) -> Result<Value> {
+    let ph = s.playhead();
+    let pick = nested_to_reveal(s).ok_or_else(|| EngineError::Other("select a nested sequence clip".into()))?;
     let (nested, t) = (pick.item, pick.source_time_at(ph.clamp(pick.start, pick.end() - Tick(1))));
     s.execute("sequence.open", json!({"item": nested.0}))?;
     s.set_playhead(t);
@@ -225,7 +238,12 @@ fn nudge_time(s: &mut Session, frames: i64) -> Result<Value> {
 fn nudge_track(s: &mut Session, up: bool) -> Result<Value> {
     let seq = s.active_sequence().ok_or(EngineError::NoSequence)?;
     let mut moves = Vec::new();
+    let mut blocked = 0usize;
+    let mut seen = std::collections::HashSet::new();
     for c in &s.state.selection {
+        if !seen.insert(*c) {
+            continue;
+        }
         let Some((tid, it)) = seq.find_item(*c) else { continue };
         let Some(tr) = seq.track(tid) else { continue };
         let list = seq.tracks(tr.kind);
@@ -234,11 +252,17 @@ fn nudge_track(s: &mut Session, up: bool) -> Result<Value> {
             (TrackKind::Video, true) | (TrackKind::Audio, false) => 1,
             _ => -1,
         };
-        let dest = usize::try_from(idx + step).ok().and_then(|i| list.get(i)).ok_or_else(|| EngineError::Other("no track to move to".into()))?;
+        // a clip already on the outermost track stays put (a linked video+audio selection must not
+        // fail because its audio has nowhere to go)
+        let Some(dest) = usize::try_from(idx + step).ok().and_then(|i| list.get(i)) else {
+            blocked += 1;
+            continue;
+        };
         moves.push((*c, dest.id, it.start));
     }
     if moves.is_empty() {
-        return Err(EngineError::Other("no clips selected".into()));
+        let why = if blocked > 0 { "no track to move to" } else { "no clips selected" };
+        return Err(EngineError::Other(why.into()));
     }
     s.edit_sequence("Nudge", |q, ctx, _| Ok(edit::move_items(q, &moves, false, ctx)?))?;
     Ok(json!({"moved": moves.len()}))
@@ -248,14 +272,21 @@ fn slip_selection(s: &mut Session, frames: i64) -> Result<Value> {
     let rate = s.sequence_rate();
     let clips = with_links(s, &s.state.selection.clone());
     let seq = s.active_sequence().ok_or(EngineError::NoSequence)?;
-    // media delta per clip (source frames run at the clip's speed)
-    let deltas: Vec<(ClipId, Tick)> = clips
-        .iter()
-        .filter_map(|c| seq.find_item(*c).map(|(_, i)| (*c, Tick((rate.tick_of(frames).0 as f64 * i.speed.abs().max(1e-9)).round() as i64))))
-        .collect();
+    let linked = s.state.linked_selection;
+    // media delta per clip (source frames run at the clip's speed); linked partners slip as one group
+    let mut groups: Vec<(Option<u64>, Vec<(ClipId, Tick)>)> = Vec::new();
+    for c in &clips {
+        let Some((_, i)) = seq.find_item(*c) else { continue };
+        let d = Tick((rate.tick_of(frames).0 as f64 * i.speed.abs().max(1e-9)).round() as i64);
+        let link = i.link.filter(|_| linked);
+        match groups.iter_mut().find(|(l, _)| link.is_some() && *l == link) {
+            Some((_, g)) => g.push((*c, d)),
+            None => groups.push((link, vec![(*c, d)])),
+        }
+    }
     s.edit_sequence("Slip", |q, ctx, _| {
-        for (c, d) in &deltas {
-            edit::slip(q, *c, *d, ctx)?;
+        for (_, g) in &groups {
+            slip_together(q, ctx, g)?;
         }
         Ok(())
     })?;
@@ -265,12 +296,8 @@ fn slip_selection(s: &mut Session, frames: i64) -> Result<Value> {
 fn slide_selection(s: &mut Session, frames: i64) -> Result<Value> {
     let d = s.sequence_rate().tick_of(frames);
     let clips = with_links(s, &s.state.selection.clone());
-    s.edit_sequence("Slide", |q, ctx, _| {
-        for c in &clips {
-            edit::slide(q, *c, d, ctx)?;
-        }
-        Ok(())
-    })?;
+    // one common delta, clamped by the most restrictive member, keeps linked partners in sync
+    s.edit_sequence("Slide", |q, ctx, _| Ok(edit::slide_items(q, &clips, d, ctx)?))?;
     Ok(Value::Null)
 }
 
@@ -628,13 +655,20 @@ fn export_frame(s: &mut Session, p: &Value) -> Result<Value> {
         }
     };
     let provider = s.media.full_res_provider(s.project.clone(), s.services.clone());
+    // On the web a frame can still be decoding (WebCodecs) or its bytes loading (Blob reads): the
+    // render then leaves that clip out, so saving it would pass a blank or partial picture off as
+    // the requested frame (#228). Report it instead and write nothing; a later call succeeds.
+    let _ = filmcraft_media::pending::take();
     let img = if target.source {
         filmcraft_render::render_item(&s.project, target.item, target.time, 1.0, &provider)
-            .ok_or_else(|| bad("file.exportFrame", "cannot decode the Source video frame"))?
     } else {
         let opts = filmcraft_render::RenderOptions { scale: 1.0, captions: true, ..Default::default() };
-        filmcraft_render::render_sequence(&s.project, target.item, target.time, opts, &provider)
+        Some(filmcraft_render::render_sequence(&s.project, target.item, target.time, opts, &provider))
     };
+    if filmcraft_media::pending::take() {
+        return Err(EngineError::Other("the frame is still loading; export it again in a moment".into()));
+    }
+    let img = img.ok_or_else(|| bad("file.exportFrame", "cannot decode the Source video frame"))?;
     let (w, h) = (
         u32::try_from(img.w).map_err(|_| bad("file.exportFrame", "image width exceeds limits"))?,
         u32::try_from(img.h).map_err(|_| bad("file.exportFrame", "image height exceeds limits"))?,
@@ -702,7 +736,7 @@ pub fn commands() -> Vec<CommandSpec> {
         spec("playhead.prevEditAnyTrack", "Go to Previous Edit Point on Any Track", Some("Shift+Up"), "{}", has_seq, |s, _| go_to_edit(s, false, true)),
         spec("playhead.selectedClipStart", "Go to Selected Clip Start", Some("Shift+Home"), "{}", has_selection, |s, _| go_to_selected(s, false)),
         spec("playhead.selectedClipEnd", "Go to Selected Clip End", Some("Shift+End"), "{}", has_selection, |s, _| go_to_selected(s, true)),
-        spec("sequence.revealNested", "Reveal Nested Sequence", Some("Cmd+Alt+F"), "{}", has_seq, |s, _| reveal_nested(s)),
+        spec("sequence.revealNested", "Reveal Nested Sequence", Some("Cmd+Alt+F"), "{}", has_nested_to_reveal, |s, _| reveal_nested(s)),
         // ---- selection
         spec("timeline.selectClipAtPlayhead", "Select Clip at Playhead", Some("D"), "{}", has_seq, |s, _| select_clip_at_playhead(s)),
         spec("timeline.selectNextClip", "Select Next Clip", Some("Cmd+Down"), "{}", has_seq, |s, _| select_step(s, true)),

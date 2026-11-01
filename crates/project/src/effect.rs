@@ -17,7 +17,7 @@ use crate::mask::Mask;
 pub use audio::{GEQ10_LABELS, GEQ20_LABELS, GEQ30_LABELS, PREMIERE_AUDIO_EFFECTS};
 
 mod vfx;
-pub use vfx::{EASINGS, ECHO_OPERATORS, FRAME_LAYOUTS, LIGHT_IDS, SIMPLE_BLEND, TRACK_CHOICES, auto_point};
+pub use vfx::{EASINGS, ECHO_OPERATORS, FRAME_LAYOUTS, LIGHT_IDS, SIMPLE_BLEND, TRACK_CHOICES, auto_point, ultra_key_setting};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EffectKind {
@@ -374,6 +374,27 @@ fn build_effects() -> Vec<EffectDef> {
             ],
         ),
         video(
+            "three_way_color",
+            "Three-Way Color Corrector",
+            vfx::OBSOLETE,
+            vec![
+                grp(fs("shadow_hue", "Shadow Hue", 0.0, (0.0, 360.0), (0.0, 360.0), "°", 0), "Shadows"),
+                grp(f("shadow_balance", "Shadow Balance", 0.0, 0.0, 100.0, ""), "Shadows"),
+                grp(f("shadow_level", "Shadow Level", 0.0, -100.0, 100.0, ""), "Shadows"),
+                grp(fs("mid_hue", "Midtone Hue", 0.0, (0.0, 360.0), (0.0, 360.0), "°", 0), "Midtones"),
+                grp(f("mid_balance", "Midtone Balance", 0.0, 0.0, 100.0, ""), "Midtones"),
+                grp(f("mid_level", "Midtone Level", 0.0, -100.0, 100.0, ""), "Midtones"),
+                grp(fs("hi_hue", "Highlight Hue", 0.0, (0.0, 360.0), (0.0, 360.0), "°", 0), "Highlights"),
+                grp(f("hi_balance", "Highlight Balance", 0.0, 0.0, 100.0, ""), "Highlights"),
+                grp(f("hi_level", "Highlight Level", 0.0, -100.0, 100.0, ""), "Highlights"),
+                grp(f("shadow_threshold", "Shadow Threshold", 33.0, 0.0, 100.0, ""), "Tonal Range"),
+                grp(f("shadow_softness", "Shadow Softness", 30.0, 0.0, 100.0, ""), "Tonal Range"),
+                grp(f("hi_threshold", "Highlight Threshold", 66.0, 0.0, 100.0, ""), "Tonal Range"),
+                grp(f("hi_softness", "Highlight Softness", 30.0, 0.0, 100.0, ""), "Tonal Range"),
+                fs("saturation", "Saturation", 100.0, (0.0, 200.0), (0.0, 200.0), "", 1),
+            ],
+        ),
+        video(
             "leave_color",
             "Leave Color",
             vfx::OBSOLETE,
@@ -619,7 +640,8 @@ fn build_effects() -> Vec<EffectDef> {
                 ang("skew_axis", "Skew Axis", 0.0),
                 ang("rotation", "Rotation", 0.0),
                 f("opacity", "Opacity", 100.0, 0.0, 100.0, ""),
-                f("shutter_angle", "Shutter Angle", 0.0, 0.0, 360.0, ""),
+                b("shutter_override", "Use Effect Shutter Angle", false),
+                f("shutter_angle", "Shutter Angle", 180.0, 0.0, 360.0, ""),
             ],
         ),
         video("mirror", "Mirror", DISTORT, vec![pt("center", "Reflection Center", f64::NAN, f64::NAN), ang("angle", "Reflection Angle", 0.0)]),

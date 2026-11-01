@@ -92,11 +92,13 @@ jobs:
           key: film-panel-ui-${{ matrix.os }}
       - name: Integration tests, one binary at a time
         shell: bash
+        env:
+          SHARD: ${{ matrix.shard }}
         run: |
           i=0; fails=()
           for t in crates/ui-egui/tests/*.rs; do
             n=$(basename "$t" .rs)
-            if [ $((i % 4)) -eq ${{ matrix.shard }} ]; then
+            if [ $((i % 4)) -eq "$SHARD" ]; then
               echo "::group::$n"
               if cargo test --locked -p filmcraft-ui-egui --test "$n" --no-fail-fast; then echo "PASS $n"; else echo "FAIL $n"; fails+=("$n"); fi
               rm -f target/debug/deps/"$n"-*

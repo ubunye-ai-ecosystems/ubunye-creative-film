@@ -119,13 +119,18 @@ fn clip_commands_take_explicit_clips_without_a_selection() {
 fn naming_nothing_usable_does_not_enable_a_command() {
     let mut s = demo();
     let before = s.project.clone();
-    // no ids, ids of no clip, the wrong type, and a key the command does not take
-    for p in [json!({"clips": []}), json!({"clips": [987_654_321u64]}), json!({"clips": "all"}), json!({"clips": [-1, 1.5, null]}), json!({"items": [1]})] {
+    // no ids, the wrong type, and a key the command does not take
+    for p in [json!({"clips": []}), json!({"clips": "all"}), json!({"items": [1]})] {
         assert_eq!(disabled(s.execute("edit.rippleDelete", p.clone())), "nothing selected", "{p}");
     }
+    // ids of no clip and values that are not ids: still disabled, and the reason names them (#591)
+    let why = disabled(s.execute("edit.rippleDelete", json!({"clips": [987_654_321u64]})));
+    assert!(why.starts_with("no clip 987654321 in the active sequence"), "{why}");
+    let why = disabled(s.execute("edit.rippleDelete", json!({"clips": [-1, 1.5, null]})));
+    assert!(why.starts_with("-1 is not a clip id"), "{why}");
     assert_eq!(disabled(s.execute("clip.replaceFromBin", json!({"clips": [v1(&s)[0].id.0], "item": 987_654_321u64}))), "select a clip in the Project panel");
     // `edit.cut` takes no `clips`: it works on the selection only
-    assert_eq!(disabled(s.execute("edit.cut", json!({"clips": [v1(&s)[0].id.0]}))), "no clips selected");
+    assert_eq!(disabled(s.execute("edit.cut", json!({"clips": [v1(&s)[0].id.0]}))), "no clips or captions selected");
     assert!(std::sync::Arc::ptr_eq(&before, &s.project), "nothing was edited");
 }
 
@@ -157,6 +162,44 @@ fn link_and_speed_take_explicit_clips_without_a_selection() {
     s.execute("edit.redo", json!({})).unwrap();
     assert_eq!(clip(&s, last.id).unwrap().duration, fast.duration);
     assert!(s.state.selection.is_empty() && !s.is_enabled("clip.speedDuration"), "menu enablement still follows the selection");
+}
+
+/// #591: a caller that names clips which cannot stand in for the selection hears why, instead of
+/// "no clips selected": a clip of another sequence, an id of something else, a string id.
+#[test]
+fn named_clips_that_are_not_usable_say_why() {
+    let mut s = demo();
+    let demo_seq = s.state.active_sequence.unwrap();
+    let demo_name = s.project.item(demo_seq).unwrap().name.clone();
+    let last = v1(&s).last().unwrap().clone();
+    // a track id and a project item id are not clip ids
+    let track = s.active_sequence().unwrap().video_tracks[0].id.0;
+    let why = disabled(s.execute("clip.speedDuration", json!({"clips": [track], "speed": 50})));
+    assert_eq!(why, format!("no clip {track} in the active sequence (clip ids are the `clip` numbers of the items in sequence.inspect)"));
+    let why = disabled(s.execute("clip.speedDuration", json!({"clips": [last.item.0], "speed": 50})));
+    assert!(why.starts_with(&format!("no clip {} in the active sequence", last.item.0)), "{why}");
+    // a string is not an id
+    let why = disabled(s.execute("clip.speedDuration", json!({"clips": [last.id.0.to_string()], "speed": 50})));
+    assert!(why.starts_with(&format!("\"{}\" is not a clip id", last.id.0)), "{why}");
+    // `clip`, where the command documents it
+    let why = disabled(s.execute("graphics.setText", json!({"clip": "x", "text": "x"})));
+    assert!(why.starts_with("\"x\" is not a clip id"), "{why}");
+    // a clip of a sequence that is not the active one
+    s.execute("file.newSequence", json!({"name": "Other"})).unwrap();
+    assert_ne!(s.state.active_sequence, Some(demo_seq));
+    let why = disabled(s.execute("clip.speedDuration", json!({"clips": [last.id.0], "speed": 200})));
+    assert_eq!(
+        why,
+        format!("clip {} is in sequence \"{demo_name}\", not the active one: open it first with sequence.open {{\"item\":{}}}", last.id.0, demo_seq.0)
+    );
+    // and doing what it says works
+    s.execute("sequence.open", json!({"item": demo_seq.0})).unwrap();
+    s.execute("clip.speedDuration", json!({"clips": [last.id.0], "speed": 200})).unwrap();
+    assert!(clip(&s, last.id).unwrap().duration < last.duration);
+    // naming nothing keeps the selection's reason, for menus and callers alike
+    s.state.selection.clear();
+    assert_eq!(disabled(s.execute("clip.speedDuration", json!({"speed": 50}))), "no clips selected");
+    assert_eq!(disabled(s.execute("clip.speedDuration", json!({"clips": [], "speed": 50}))), "no clips selected");
 }
 
 #[test]
@@ -191,15 +234,15 @@ fn project_delete_takes_explicit_bins_and_items_without_a_selection() {
     assert_eq!(disabled(s.execute("project.delete", json!({}))), "select an item in the Project panel");
     // an empty bin, by its id alone
     let r = s.execute("project.delete", json!({"items": [empty]})).unwrap();
-    assert_eq!(r, json!({"items": 0, "bins": 1}));
+    assert_eq!(r, json!({"items": 0, "bins": 1, "offline": 0}));
     assert!(s.project.root.find_bin(filmcraft_project::BinId(empty)).is_none());
     // a bin with a clip in it, and an item, each by id alone
     let r = s.execute("project.delete", json!({"items": [outer]})).unwrap();
-    assert_eq!(r, json!({"items": 1, "bins": 1}));
+    assert_eq!(r, json!({"items": 1, "bins": 1, "offline": 0}));
     assert!(s.project.item(ocean).is_none());
     let dunes = item_named(&s, "Desert_Dunes.mp4");
     let r = s.execute("project.delete", json!({"items": [dunes.0]})).unwrap();
-    assert_eq!(r, json!({"items": 1, "bins": 0}));
+    assert_eq!(r, json!({"items": 1, "bins": 0, "offline": 0}));
     assert_eq!(s.project.items.len(), before - 2);
     assert!(s.state.project_selection.is_empty(), "the selection is left as it was");
     assert!(!s.is_enabled("project.delete"), "menu enablement still follows the selection");
@@ -263,4 +306,151 @@ fn link_leaves_clips_without_a_partner_unlinked() {
     assert_eq!(clip(&s, v0).unwrap().link, clip(&s, a0).unwrap().link);
     assert_eq!(clip(&s, v1).unwrap().link, None, "v1 has no overlapping audio in the selection");
     assert_eq!(clip(&s, a2).unwrap().link, None, "a2 has no overlapping video in the selection");
+}
+
+/// #1103: Unlink with a selection that also holds an unlinked clip (a title, a music clip) unlinks
+/// the linked ones, as the Timeline's context menu offers, instead of re-linking them.
+#[test]
+fn unlink_with_an_unlinked_clip_in_the_selection_still_unlinks() {
+    let mut s = demo();
+    let (v, a) = (v1(&s), a1(&s));
+    let (v0, a0, v1, a1) = (v[0].id, a[0].id, v[1].id, a[1].id);
+    assert!(clip(&s, v0).unwrap().link.is_some() && clip(&s, v1).unwrap().link.is_some(), "the demo's clips start linked");
+    // make one clip unlinked on its own: its partner goes with it (no one-member link stays)
+    s.execute("clip.link", json!({"clips": [a1.0]})).unwrap();
+    assert_eq!(clip(&s, a1).unwrap().link, None);
+    assert_eq!(clip(&s, v1).unwrap().link, None, "the partner left alone is unlinked too");
+    s.execute("clip.link", json!({"clips": [v0.0, a0.0]})).unwrap();
+    s.execute("clip.link", json!({"clips": [v0.0, a0.0]})).unwrap();
+    assert!(clip(&s, v0).unwrap().link.is_some(), "v0 and a0 linked again");
+    // v0 + a0 linked, v1 not: Unlink
+    let r = s.execute("clip.link", json!({"clips": [v0.0, a0.0, v1.0]})).unwrap();
+    assert_eq!(r["linked"], false);
+    for c in [v0, a0, v1] {
+        assert_eq!(clip(&s, c).unwrap().link, None, "{c:?}");
+    }
+}
+
+/// #3620: timeline.delete aliases clear / ripple delete and accepts explicit clips without selection.
+#[test]
+fn timeline_delete_alias_deletes_and_ripple_deletes_explicit_clips() {
+    let mut s = demo();
+    let (a, b) = (v1(&s)[0].clone(), v1(&s)[1].clone());
+    assert!(s.is_enabled("timeline.delete"), "timeline.delete is enabled whenever a sequence is open");
+
+    // Regular delete by clip id
+    s.execute("timeline.delete", json!({"clip": a.id.0})).unwrap();
+    assert!(clip(&s, a.id).is_none() && clip(&s, b.id).is_some());
+    s.execute("edit.undo", json!({})).unwrap();
+    assert!(clip(&s, a.id).is_some());
+
+    // Ripple delete by clips list
+    let a_and_its_audio: Vec<u64> = s
+        .active_sequence()
+        .unwrap()
+        .all_tracks()
+        .flat_map(|t| &t.items)
+        .filter(|i| i.id == a.id || (i.link.is_some() && i.link == a.link))
+        .map(|i| i.id.0)
+        .collect();
+    s.execute("timeline.setTrack", json!({"track": "A2", "syncLock": false})).unwrap();
+    s.execute("timeline.delete", json!({"clips": a_and_its_audio, "ripple": true})).unwrap();
+    assert!(clip(&s, a.id).is_none());
+    assert_eq!(clip(&s, b.id).unwrap().start, a.start, "the next clip closes the gap");
+
+    // Malformed explicit targets are rejected and do not mutate selection
+    s.state.selection = vec![b.id];
+    assert!(s.execute("timeline.delete", json!({"clip": null})).is_err());
+    assert!(s.execute("edit.clear", json!({"clip": "invalid"})).is_err());
+    assert!(s.execute("edit.rippleDelete", json!({"clips": null})).is_err());
+    assert_eq!(s.state.selection, vec![b.id]);
+    assert!(clip(&s, b.id).is_some());
+}
+
+/// Every explicit-target shape that is not a valid, non-empty list of clips of the active
+/// sequence is a param error, for each command sharing the deletion handling, and never falls
+/// back to deleting the selection.
+#[test]
+fn deletion_commands_reject_invalid_explicit_targets_without_touching_the_selection() {
+    let mut s = demo();
+    let (a, b) = (v1(&s)[0].clone(), v1(&s)[1].clone());
+    let unknown = 9_999_999u64;
+    let bad_params = [
+        json!({"clip": null}),
+        json!({"clips": null}),
+        json!({"clip": "x"}),
+        json!({"clip": -1}),
+        json!({"clips": 5}),
+        json!({"clips": []}),
+        json!({"clips": [null]}),
+        json!({"clips": ["x"]}),
+        json!({"clips": [a.id.0, null]}),
+        json!({"clips": [unknown]}),
+        json!({"clips": [a.id.0, unknown]}),
+        json!({"clip": unknown}),
+        json!({"clip": a.id.0, "clips": [a.id.0]}),
+        json!({"clip": null, "clips": [a.id.0]}),
+    ];
+    let before = v1(&s).len();
+    for cmd in ["edit.clear", "edit.rippleDelete", "timeline.delete"] {
+        for p in &bad_params {
+            s.state.selection = vec![b.id];
+            match s.execute(cmd, p.clone()) {
+                Err(EngineError::BadParams { .. }) => {}
+                other => panic!("{cmd} {p}: expected BadParams, got {other:?}"),
+            }
+            assert_eq!(s.state.selection, vec![b.id], "{cmd} {p}: selection untouched");
+            assert_eq!(v1(&s).len(), before, "{cmd} {p}: nothing deleted");
+            assert!(clip(&s, a.id).is_some() && clip(&s, b.id).is_some(), "{cmd} {p}: clips intact");
+        }
+    }
+
+    // timeline.delete: `ripple` must be a boolean when given
+    s.state.selection = vec![b.id];
+    for ripple in [json!("yes"), json!(1)] {
+        match s.execute("timeline.delete", json!({"clip": a.id.0, "ripple": ripple})) {
+            Err(EngineError::BadParams { .. }) => {}
+            other => panic!("timeline.delete ripple {ripple}: expected BadParams, got {other:?}"),
+        }
+    }
+    assert!(clip(&s, a.id).is_some() && clip(&s, b.id).is_some());
+
+    // no selection: still an error, nothing deleted
+    s.state.selection.clear();
+    for cmd in ["edit.clear", "edit.rippleDelete", "timeline.delete"] {
+        assert!(s.execute(cmd, json!({"clip": null})).is_err());
+        assert!(s.execute(cmd, json!({"clips": []})).is_err());
+        assert!(s.execute(cmd, json!({"clips": [unknown]})).is_err());
+    }
+    assert_eq!(v1(&s).len(), before);
+}
+
+/// Only V1 stays sync-locked, so a ripple of a lone V1 clip (linked selection is off) moves nothing else.
+fn unlock_all_but_v1(s: &mut Session) {
+    let seq = s.active_sequence().unwrap();
+    let (nv, na) = (seq.video_tracks.len(), seq.audio_tracks.len());
+    let names = (2..=nv).map(|n| format!("V{n}")).chain((1..=na).map(|n| format!("A{n}")));
+    for track in names.collect::<Vec<_>>() {
+        s.execute("timeline.setTrack", json!({"track": track, "syncLock": false})).unwrap();
+    }
+}
+
+/// With neither `clip` nor `clips`, deletion still acts on the selection.
+#[test]
+fn deletion_commands_fall_back_to_the_selection_only_when_no_target_is_named() {
+    for cmd in ["edit.clear", "edit.rippleDelete", "timeline.delete"] {
+        let mut s = demo();
+        unlock_all_but_v1(&mut s);
+        let b = v1(&s)[1].clone();
+        s.state.selection = vec![b.id];
+        s.execute(cmd, json!({})).unwrap();
+        assert!(clip(&s, b.id).is_none(), "{cmd} deletes the selected clip");
+        assert!(s.state.selection.is_empty(), "{cmd} clears the selection");
+    }
+    let mut s = demo();
+    unlock_all_but_v1(&mut s);
+    let b = v1(&s)[1].clone();
+    s.state.selection = vec![b.id];
+    s.execute("timeline.delete", json!({"ripple": true})).unwrap();
+    assert!(clip(&s, b.id).is_none(), "timeline.delete ripple falls back to the selection");
 }

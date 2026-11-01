@@ -788,7 +788,14 @@ impl State {
                 .and_then(Value::as_array)
                 .into_iter()
                 .flatten()
-                .map(|x| Person { user: s(x, "user"), name: s(x, "name"), role: s(x, "role"), invited: s(x, "status") == "invited", me: b(x, "me"), online: b(x, "online") })
+                .map(|x| Person {
+                    user: s(x, "user"),
+                    name: s(x, "name"),
+                    role: s(x, "role"),
+                    invited: s(x, "status") == "invited",
+                    me: b(x, "me"),
+                    online: b(x, "online"),
+                })
                 .collect(),
         );
     }
@@ -1194,7 +1201,7 @@ mod native {
     use std::net::TcpStream;
     use std::time::Duration;
 
-    use super::*;
+    use super::{BINDING, Client, Config, Job, MAX_LINE, NOT_RUNNING, POLL_MS, Said, Shared, Value, for_people, job_done, json, lock, now_ms, read_token};
 
     /// One connection to the service's API.
     pub struct Conn {

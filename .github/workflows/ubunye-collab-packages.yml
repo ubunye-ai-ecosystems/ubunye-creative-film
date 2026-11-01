@@ -41,6 +41,10 @@ env:
   KOPANO_REF: ${{ inputs.kopano_ref || 'f5ff0bfd03cfedf945f9e27869b0814bb7c93cf4' }}
   # kopanod's toolchain (as the studio-tools kopanod.yml); Film uses its rust-toolchain.toml.
   KOPANO_RUST: 1.97.0
+  # The fonts upstream's release builds with (same pin as release.yml), required: without them the
+  # interface has no glyphs for Japanese, Korean, Chinese and other scripts (egui panics on a
+  # missing glyph, e.g. in the language menu).
+  CRAFT_FONTS_REQUIRED: "1"
 
 jobs:
   windows:
@@ -49,6 +53,15 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: b076417b5880bd4154bd22f00695b1d28c6bea83
+          path: craft-fonts
+          persist-credentials: false
+      - name: Build with craft-fonts
+        shell: bash
+        run: echo "CRAFT_FONTS_DIR=$GITHUB_WORKSPACE/craft-fonts" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           repository: ubunye-ai-ecosystems/ubunye-creative-studio-tools
@@ -116,6 +129,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
+          repository: storytold/craft-fonts
+          ref: b076417b5880bd4154bd22f00695b1d28c6bea83
+          path: craft-fonts
+          persist-credentials: false
+      - name: Build with craft-fonts
+        shell: bash
+        run: echo "CRAFT_FONTS_DIR=$GITHUB_WORKSPACE/craft-fonts" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
           repository: ubunye-ai-ecosystems/ubunye-creative-studio-tools
           ref: ${{ env.KOPANO_REF }}
           path: kopano-src
@@ -164,6 +186,15 @@ jobs:
       NFPM_VERSION: 2.47.0
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: b076417b5880bd4154bd22f00695b1d28c6bea83
+          path: craft-fonts
+          persist-credentials: false
+      - name: Build with craft-fonts
+        shell: bash
+        run: echo "CRAFT_FONTS_DIR=$GITHUB_WORKSPACE/craft-fonts" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           repository: ubunye-ai-ecosystems/ubunye-creative-studio-tools

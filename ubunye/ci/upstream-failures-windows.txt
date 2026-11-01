@@ -1,0 +1,39 @@
+# Tests that fail on unmodified upstream FilmCraft main (9c6d6611) on GitHub's hosted windows runner,
+# with Ubunye's build + test steps: ubunye-baseline run 41331823149, job 124923349973 (2026-11-01).
+# Upstream's own gate runs Linux only. ubunye-ci excludes exactly these on windows (one per line:
+# <nextest binary id> <test name>). Remove a line when the test passes there.
+filmcraft-export	determinism_tests::max_threads_caps_the_threads_an_export_runs_on
+filmcraft-golden::golden	gpu_blend_modes_match_cpu_render
+filmcraft-golden::golden	gpu_effect_chains_match_cpu_render
+filmcraft-golden::golden	gpu_matches_cpu_on_golden_scenes
+filmcraft-golden::golden	gpu_transition_of_blended_clips_matches_cpu_render
+filmcraft-gpu	blend_tests::gpu_blend_edge_cases_match_cpu
+filmcraft-gpu	blend_tests::gpu_blend_modes_match_cpu
+filmcraft-gpu	blend_tests::gpu_dissolve_pattern_is_exact
+filmcraft-gpu	blend_tests::normal_fast_path_and_blend_layers_off_output
+filmcraft-gpu	export_renderer::tests::gpu_render_impls_frame_renderer
+filmcraft-gpu	export_renderer::tests::solid_frame_matches_cpu
+filmcraft-gpu	export_renderer::tests::transformed_frame_matches_cpu
+filmcraft-gpu	export_renderer::tests::transformed_nested_picture_matches_cpu
+filmcraft-gpu	fx_tests::alpha_invert_does_not_amplify_invented_opacity_at_odd_source_pixels
+filmcraft-gpu	fx_tests::effect_source_identity_preserves_odd_sized_half_float_texels
+filmcraft-gpu	fx_tests::effect_source_integer_decimation_preserves_cpu_box_oracle
+filmcraft-gpu	fx_tests::gpu_effect_chains_match_cpu
+filmcraft-gpu	fx_tests::gpu_effect_layers_match_cpu_plan
+filmcraft-gpu	fx_tests::gpu_effects_match_cpu_exactly
+filmcraft-gpu	fx_tests::gpu_effects_match_cpu_exactly_with_fxc
+filmcraft-gpu	fx_tests::gpu_extract_zero_softness_has_no_fractional_edge
+filmcraft-gpu	fx_tests::gpu_neutral_three_way_leaves_negative_and_hdr_values
+filmcraft-gpu	fx_tests::hostile_parameters_are_bounded
+filmcraft-gpu	fx_tests::keyframed_effects_follow_time
+filmcraft-gpu	fx_tests::layers_with_effects_fall_back_to_the_cpu_without_a_stage
+filmcraft-gpu	fx_tests::plain_layers_skip_the_effect_stage
+filmcraft-gpu	tests::gpu_draws_yuv_alpha_plane_like_the_cpu
+filmcraft-gpu	tests::gpu_matches_cpu_plan
+filmcraft-gpu	tests::gpu_push_matches_cpu_with_alpha_and_surrounding_blends
+filmcraft-gpu	tests::hdr_input_gpu_matches_cpu
+filmcraft-gpu	tests::prepared_upload_matches_inline_conversion
+filmcraft-gpu	tests::yuv_code_range_gpu_matches_cpu
+filmcraft-gpu::export_pipeline	gpu_export_matches_cpu_and_counts
+filmcraft-ui-egui::play_ahead	a_device_with_other_channels_plays_the_channels_both_have
+filmcraft-ui-egui::play_ahead	plays_every_frame_in_order_from_the_start

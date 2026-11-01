@@ -9,3 +9,5 @@ pub mod kopano_panel;
 
 #[cfg(test)]
 mod tests_kopano;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_updates;

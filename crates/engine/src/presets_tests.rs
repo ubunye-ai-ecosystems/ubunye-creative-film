@@ -57,8 +57,8 @@ fn keyframe_modes_retime_onto_the_target() {
         let it = item(&s, b);
         assert_eq!(it.effects.len(), before + 1);
         let e = it.effects.iter().rfind(|e| e.effect == "gaussian_blur").unwrap();
-        // standard effects go before the intrinsic ones
-        assert!(it.effects.iter().position(|x| x.effect == "gaussian_blur").unwrap() < it.effects.iter().position(|x| x.effect == "motion").unwrap());
+        // standard effects go after the intrinsic ones, like effects.apply (#1879)
+        assert!(it.effects.iter().position(|x| x.effect == "gaussian_blur").unwrap() > it.effects.iter().position(|x| x.effect == "motion").unwrap());
         let p = e.param("blurriness").unwrap();
         assert_eq!(
             p.keyframes.len(),
@@ -192,6 +192,25 @@ fn builtins_apply_and_user_presets_persist() {
     lib.set_dir(&dir);
     assert!(lib.user.is_empty());
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// #333: Fade In then Fade Out on one clip keeps both ramps (they keyframe the same Opacity).
+#[test]
+fn fade_in_and_fade_out_add_up_on_one_clip() {
+    let (mut s, clips) = demo();
+    let c = clips[0];
+    s.execute("presets.apply", json!({"preset": "Fade In", "clips": [c.0]})).unwrap();
+    s.execute("presets.apply", json!({"preset": "Fade Out", "clips": [c.0]})).unwrap();
+    let it = item(&s, c);
+    let op = it.effect("opacity").unwrap().param("opacity").unwrap();
+    let keys: Vec<(Tick, ParamValue)> = op.keyframes.iter().map(|k| (k.time, k.value.clone())).collect();
+    let (tin, tout) = (it.source_in, it.source_in + media_len(&it));
+    let f = ParamValue::Float;
+    assert_eq!(keys, vec![(tin, f(0.0)), (tin + secs(1.0), f(100.0)), (tout - secs(1.0), f(100.0)), (tout, f(0.0))], "both fades survive");
+    // re-applying Fade In replaces its own ramp, not the Fade Out one
+    s.execute("presets.apply", json!({"preset": "Fade In", "clips": [c.0]})).unwrap();
+    let it = item(&s, c);
+    assert_eq!(it.effect("opacity").unwrap().param("opacity").unwrap().keyframes.len(), 4);
 }
 
 #[test]

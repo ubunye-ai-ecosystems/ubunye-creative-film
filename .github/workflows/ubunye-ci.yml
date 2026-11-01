@@ -21,21 +21,79 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-14, windows-2022]
+        os: [ubuntu-24.04, macos-15, windows-2022]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4            # TODO(M2): pin by SHA
+      # the fonts upstream's gate and release build with (same pin as release.yml); without them
+      # the UI tests that draw Japanese, Korean and other scripts have no glyphs
+      - uses: actions/checkout@v4            # TODO(M2): pin by SHA
+        with:
+          repository: storytold/craft-fonts
+          ref: b076417b5880bd4154bd22f00695b1d28c6bea83
+          path: craft-fonts
+          persist-credentials: false
+      - name: Build with craft-fonts
+        shell: bash
+        run: echo "CRAFT_FONTS_DIR=$GITHUB_WORKSPACE/craft-fonts" >> "$GITHUB_ENV"
       - name: Linux packages
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libasound2-dev mesa-vulkan-drivers
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev libxcursor-dev libxrandr-dev libxi-dev libfontconfig1-dev libfreetype-dev libgl1-mesa-dev libasound2-dev mesa-vulkan-drivers
       - name: Toolchain (rust-toolchain.toml)
+        shell: bash
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2         # TODO(M2): pin by SHA
+      # Upstream's gate runs tests with nextest (one process per test; tests that set per-process
+      # state such as the interface language or a panic hook rely on that) at this version.
+      # nextest's prebuilt release (the org allows only listed actions, so no install action)
+      # pinned release asset, checked against its SHA-256 (from the GitHub release) before use
+      - name: cargo-nextest 0.9.150
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            Linux) t=x86_64-unknown-linux-gnu; sum=b0959bc64232974224cf9fb22c915845398c0e8668fa7831eb5b43fb1eef781f ;;
+            macOS) t=universal-apple-darwin; sum=82a759b4d218d38359424196ab244c470e8f7c7d149c814fbbeef4d67c3c301a ;;
+            Windows) t=x86_64-pc-windows-msvc; sum=b7a8bf567140b8b366716f2dea27b32e088dc12f53597315f976d0dbf7c6ade8 ;;
+          esac
+          f="$RUNNER_TEMP/nextest.tar.gz"
+          curl -fsSL -o "$f" "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.150/cargo-nextest-0.9.150-$t.tar.gz"
+          echo "$sum  $f" | sha256sum -c - 2>/dev/null || echo "$sum  $f" | shasum -a 256 -c -
+          # relative paths: GNU tar on Windows reads "D:" as a remote host
+          (cd "$RUNNER_TEMP" && tar zxf nextest.tar.gz)
+          bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+          mkdir -p "$bin" && echo "$bin" >> "$GITHUB_PATH"
+          mv "$RUNNER_TEMP"/cargo-nextest* "$bin/"
+          export PATH="$bin:$PATH"
+          cargo nextest --version
       - name: Build
         run: cargo build --locked --workspace
       - name: Test
-        run: cargo test --locked --workspace --no-fail-fast
+        shell: bash
+        # pinned_decisions::coded_slices_are_pinned hashes coded slices whose SEI carries
+        # CARGO_PKG_VERSION (crates/h264enc/src/lib.rs, "filmcraft-h264enc <version>"): its pins are
+        # for upstream's 0.15.0, ours is 0.7.0, so it can only pass upstream (it does: upstream's gate).
+        # On Windows and macOS, the tests unmodified upstream also fails on these runners
+        # (ubunye/ci/upstream-failures-<os>.txt, from the ubunye-baseline run) are left out too.
+        run: |
+          filter='not test(=pinned_decisions::coded_slices_are_pinned)'
+          case "$RUNNER_OS" in
+            Windows) list=ubunye/ci/upstream-failures-windows.txt ;;
+            macOS) list=ubunye/ci/upstream-failures-macos.txt ;;
+            *) list= ;;
+          esac
+          if [ -n "$list" ]; then
+            while IFS=$'\t' read -r bin name; do
+              name=${name%$'\r'}
+              case "$bin" in ''|'#'*) continue ;; esac
+              filter="$filter and not (binary_id($bin) and test(=$name))"
+            done < "$list"
+          fi
+          echo "nextest filter: $filter"
+          cargo nextest run --locked --workspace --lib --bins --tests --no-fail-fast -E "$filter"
+      - name: Doctests
+        run: cargo test --locked --workspace --doc
       - name: Smoke (import → edit → save → reopen → export)
         if: runner.os != 'Windows' && hashFiles('ubunye/scripts/smoke.sh') != ''
         run: bash ubunye/scripts/smoke.sh "$PWD/target/debug/filmcraft-cli" "$RUNNER_TEMP/smoke"
@@ -43,13 +101,43 @@ jobs:
   upstream-gate:
     # Upstream's own full gate (fmt, clippy -D warnings, tests, layers, assets, wasm).
     # Informational until a green baseline is recorded in ubunye/DEVELOPMENT.md.
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     continue-on-error: true
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libasound2-dev
+      - uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: b076417b5880bd4154bd22f00695b1d28c6bea83
+          path: craft-fonts
+          persist-credentials: false
+      - run: echo "CRAFT_FONTS_DIR=$GITHUB_WORKSPACE/craft-fonts" >> "$GITHUB_ENV"
+      - run: sudo apt-get update && sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev libxcursor-dev libxrandr-dev libxi-dev libfontconfig1-dev libfreetype-dev libgl1-mesa-dev libasound2-dev mesa-vulkan-drivers
+      - name: Toolchain (rust-toolchain.toml) and the wasm target
+        run: rustup show active-toolchain || rustup toolchain install; rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      # nextest's prebuilt release (the org allows only listed actions, so no install action)
+      # pinned release asset, checked against its SHA-256 (from the GitHub release) before use
+      - name: cargo-nextest 0.9.150
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            Linux) t=x86_64-unknown-linux-gnu; sum=b0959bc64232974224cf9fb22c915845398c0e8668fa7831eb5b43fb1eef781f ;;
+            macOS) t=universal-apple-darwin; sum=82a759b4d218d38359424196ab244c470e8f7c7d149c814fbbeef4d67c3c301a ;;
+            Windows) t=x86_64-pc-windows-msvc; sum=b7a8bf567140b8b366716f2dea27b32e088dc12f53597315f976d0dbf7c6ade8 ;;
+          esac
+          f="$RUNNER_TEMP/nextest.tar.gz"
+          curl -fsSL -o "$f" "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.150/cargo-nextest-0.9.150-$t.tar.gz"
+          echo "$sum  $f" | sha256sum -c - 2>/dev/null || echo "$sum  $f" | shasum -a 256 -c -
+          # relative paths: GNU tar on Windows reads "D:" as a remote host
+          (cd "$RUNNER_TEMP" && tar zxf nextest.tar.gz)
+          bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+          mkdir -p "$bin" && echo "$bin" >> "$GITHUB_PATH"
+          mv "$RUNNER_TEMP"/cargo-nextest* "$bin/"
+          export PATH="$bin:$PATH"
+          cargo nextest --version
       - run: cargo xtask ci
 
   brand-leak:

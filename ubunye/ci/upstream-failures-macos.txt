@@ -1,0 +1,6 @@
+# Tests that fail on unmodified upstream FilmCraft main (9c6d6611) on GitHub's hosted macos runner,
+# with Ubunye's build + test steps: ubunye-baseline run 41331823149, job 124923349613 (2026-11-01).
+# Upstream's own gate runs Linux only. ubunye-ci excludes exactly these on macos (one per line:
+# <nextest binary id> <test name>). Remove a line when the test passes there.
+filmcraft-platform::it	hardware_encode::rgba_pictures_encode_like_the_cpu_conversion
+filmcraft-ui-egui::it	graphics_ui::effect_controls_font_and_style_are_drop_downs_that_apply

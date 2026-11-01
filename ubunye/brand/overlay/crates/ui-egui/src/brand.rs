@@ -64,8 +64,8 @@ pub fn localize(text: &str) -> &str {
     }
     static RENAMED: OnceLock<Mutex<HashMap<String, &'static str>>> = OnceLock::new();
     let mut map = RENAMED.get_or_init(Default::default).lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(s) = map.get(text) {
-        return *s;
+    if let Some(&s) = map.get(text) {
+        return s;
     }
     if map.len() >= MAX_RENAMED {
         return text;
@@ -82,7 +82,7 @@ pub fn localize_owned(text: String) -> String {
 
 /// Our mark, decoded once and kept as a texture.
 pub fn mark(ctx: &egui::Context) -> Option<egui::TextureHandle> {
-    let id = egui::Id::new("ubunye-mark");
+    let id = egui::Id::unique("ubunye-mark");
     if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
         return Some(t);
     }
