@@ -84,7 +84,7 @@ fn unknown_strings_pass_through_and_languages_round_trip() {
 fn the_current_language_is_per_thread() {
     // any entry the Spanish catalog has
     let (entries, _) = catalog::parse_entries(include_str!("es.tsv"));
-    let Some((_, en, es)) = entries.into_iter().find(|(ctx, en, es)| ctx.is_empty() && en != es) else { return };
+    let Some((_, en, es)) = entries.into_iter().find(|(ctx, en, es)| ctx.is_empty() && en != es && !en.contains("FilmCraft")) else { return };
     set_current(Language::Es);
     assert_eq!((current(), t(&en)), (Language::Es, es.as_str()));
     // another thread (another test) still draws in English

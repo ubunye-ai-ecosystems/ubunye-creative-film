@@ -556,6 +556,11 @@ PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
         ],
     ),
     (
+        # upstream's test of that version line
+        "apps/filmcraft-cli/tests/it/cli.rs",
+        [('let want = format!("filmcraft-cli {}\\n", env!("CARGO_PKG_VERSION"));', f'let want = format!("filmcraft-cli {{}} ({NAME})\\n", env!("CARGO_PKG_VERSION"));')],
+    ),
+    (
         "apps/filmcraft-web/src/api.rs",
         [('js_sys::Error::new("FilmCraft is not running yet")', f'js_sys::Error::new("{NAME} is not running yet")')],
     ),

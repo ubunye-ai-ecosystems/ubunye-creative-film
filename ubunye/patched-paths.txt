@@ -13,6 +13,7 @@ Cargo.toml
 NOTICE
 README.md
 apps/filmcraft-cli/src/main.rs
+apps/filmcraft-cli/tests/it/cli.rs
 apps/filmcraft-web/src/api.rs
 apps/filmcraft-web/web/favicon.png
 apps/filmcraft-web/web/favicon.png.attribution
@@ -84,6 +85,7 @@ crates/ui-egui/src/i18n/pl.tsv
 crates/ui-egui/src/i18n/pt-br.tsv
 crates/ui-egui/src/i18n/ru.tsv
 crates/ui-egui/src/i18n/sv.tsv
+crates/ui-egui/src/i18n/tests.rs
 crates/ui-egui/src/i18n/tr.tsv
 crates/ui-egui/src/i18n/uk.tsv
 crates/ui-egui/src/i18n/zh-cn.tsv

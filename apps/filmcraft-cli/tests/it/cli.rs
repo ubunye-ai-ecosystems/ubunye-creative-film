@@ -29,7 +29,7 @@ fn help_and_usage_errors() {
 
 #[test]
 fn version_after_global_options() {
-    let want = format!("filmcraft-cli {}\n", env!("CARGO_PKG_VERSION"));
+    let want = format!("filmcraft-cli {} (Ubunye Film)\n", env!("CARGO_PKG_VERSION"));
     for args in [&["--version"][..], &["-V"], &["version"], &["--demo", "--version"], &["--compact", "-V"], &["--demo", "version"]] {
         let o = cli(args);
         assert!(o.status.success(), "{args:?}: {}", String::from_utf8_lossy(&o.stderr));
