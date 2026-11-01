@@ -36,7 +36,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev libxcursor-dev libxrandr-dev libxi-dev libfontconfig1-dev libfreetype-dev libgl1-mesa-dev libasound2-dev mesa-vulkan-drivers
       - name: Toolchain (rust-toolchain.toml)
         shell: bash
-        run: rustup show active-toolchain || rustup toolchain install
+        run: rustup toolchain install 1.99.1 --profile minimal && rustup default 1.99.1
       - uses: Swatinem/rust-cache@v2         # TODO(M2): pin by SHA
       # Upstream's gate runs tests with nextest (one process per test; tests that set per-process
       # state such as the interface language or a panic hook rely on that) at this version.
