@@ -594,7 +594,7 @@ PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
         "apps/filmcraft/src/native_menu.rs",
         [
             ('Submenu::new("FilmCraft", true)', "Submenu::new(filmcraft_ui_egui::brand::NAME, true)"),
-            ("|i| i.label.clone());" + NL + "    let about", "|i| filmcraft_ui_egui::brand::localize_owned(i.label.clone()));" + NL + "    let about"),
+            ("|i| i.label.clone())", "|i| filmcraft_ui_egui::brand::localize_owned(i.label.clone()))"),
             ('label("app.about", "About FilmCraft")', f'label("app.about", "About {NAME}")'),
             ('label("help.discord", "Join the ArtCraft Discord…")', 'label("help.discord", "Join the Ubunye Community…")'),
             ("MenuItem::with_id(it.id.clone(), label, it.enabled,", "MenuItem::with_id(it.id.clone(), filmcraft_ui_egui::brand::localize(&label), it.enabled,"),

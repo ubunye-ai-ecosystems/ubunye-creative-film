@@ -82,7 +82,7 @@ pub fn localize_owned(text: String) -> String {
 
 /// Our mark, decoded once and kept as a texture.
 pub fn mark(ctx: &egui::Context) -> Option<egui::TextureHandle> {
-    let id = egui::Id::new("ubunye-mark");
+    let id = egui::Id::unique("ubunye-mark");
     if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
         return Some(t);
     }

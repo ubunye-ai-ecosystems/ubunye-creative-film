@@ -504,7 +504,7 @@ enum Field {
 fn copy(app: &mut FilmcraftApp, ctx: &egui::Context, text: &str) {
     ctx.copy_text(text.to_string());
     app.kopano.copied = Some(text.to_string());
-    app.toast = Some((crate::i18n::t("Copied").to_string(), ctx.input(|i| i.time)));
+    app.status(crate::i18n::t("Copied"));
 }
 
 /// Run a button's command; a refusal shows on the window's last line.
