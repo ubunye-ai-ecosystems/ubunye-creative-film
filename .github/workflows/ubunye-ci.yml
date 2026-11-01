@@ -35,9 +35,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2         # TODO(M2): pin by SHA
       # Upstream's gate runs tests with nextest (one process per test; tests that set per-process
       # state such as the interface language or a panic hook rely on that) at this version.
-      - uses: taiki-e/install-action@v2      # TODO(M2): pin by SHA
-        with:
-          tool: cargo-nextest@0.9.150
+      # nextest's prebuilt release (the org allows only listed actions, so no install action)
+      - name: cargo-nextest 0.9.150
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in Linux) os=linux ;; macOS) os=mac ;; Windows) os=windows-tar ;; esac
+          curl -LsSf "https://get.nexte.st/0.9.150/$os" | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+          cargo nextest --version
       - name: Build
         run: cargo build --locked --workspace
       - name: Test
@@ -60,9 +64,13 @@ jobs:
       - name: Toolchain (rust-toolchain.toml) and the wasm target
         run: rustup show active-toolchain || rustup toolchain install; rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2      # TODO(M2): pin by SHA
-        with:
-          tool: cargo-nextest@0.9.150
+      # nextest's prebuilt release (the org allows only listed actions, so no install action)
+      - name: cargo-nextest 0.9.150
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in Linux) os=linux ;; macOS) os=mac ;; Windows) os=windows-tar ;; esac
+          curl -LsSf "https://get.nexte.st/0.9.150/$os" | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+          cargo nextest --version
       - run: cargo xtask ci
 
   brand-leak:
