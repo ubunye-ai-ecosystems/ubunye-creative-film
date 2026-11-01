@@ -36,11 +36,20 @@ jobs:
       # Upstream's gate runs tests with nextest (one process per test; tests that set per-process
       # state such as the interface language or a panic hook rely on that) at this version.
       # nextest's prebuilt release (the org allows only listed actions, so no install action)
+      # pinned release asset, checked against its SHA-256 (from the GitHub release) before use
       - name: cargo-nextest 0.9.150
         shell: bash
         run: |
-          case "$RUNNER_OS" in Linux) os=linux ;; macOS) os=mac ;; Windows) os=windows-tar ;; esac
-          curl -LsSf "https://get.nexte.st/0.9.150/$os" | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            Linux) t=x86_64-unknown-linux-gnu; sum=b0959bc64232974224cf9fb22c915845398c0e8668fa7831eb5b43fb1eef781f ;;
+            macOS) t=universal-apple-darwin; sum=82a759b4d218d38359424196ab244c470e8f7c7d149c814fbbeef4d67c3c301a ;;
+            Windows) t=x86_64-pc-windows-msvc; sum=b7a8bf567140b8b366716f2dea27b32e088dc12f53597315f976d0dbf7c6ade8 ;;
+          esac
+          f="$RUNNER_TEMP/nextest.tar.gz"
+          curl -fsSL -o "$f" "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.150/cargo-nextest-0.9.150-$t.tar.gz"
+          echo "$sum  $f" | sha256sum -c - 2>/dev/null || echo "$sum  $f" | shasum -a 256 -c -
+          tar zxf "$f" -C "${CARGO_HOME:-$HOME/.cargo}/bin"
           cargo nextest --version
       - name: Build
         run: cargo build --locked --workspace
@@ -65,11 +74,20 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install; rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       # nextest's prebuilt release (the org allows only listed actions, so no install action)
+      # pinned release asset, checked against its SHA-256 (from the GitHub release) before use
       - name: cargo-nextest 0.9.150
         shell: bash
         run: |
-          case "$RUNNER_OS" in Linux) os=linux ;; macOS) os=mac ;; Windows) os=windows-tar ;; esac
-          curl -LsSf "https://get.nexte.st/0.9.150/$os" | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            Linux) t=x86_64-unknown-linux-gnu; sum=b0959bc64232974224cf9fb22c915845398c0e8668fa7831eb5b43fb1eef781f ;;
+            macOS) t=universal-apple-darwin; sum=82a759b4d218d38359424196ab244c470e8f7c7d149c814fbbeef4d67c3c301a ;;
+            Windows) t=x86_64-pc-windows-msvc; sum=b7a8bf567140b8b366716f2dea27b32e088dc12f53597315f976d0dbf7c6ade8 ;;
+          esac
+          f="$RUNNER_TEMP/nextest.tar.gz"
+          curl -fsSL -o "$f" "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.150/cargo-nextest-0.9.150-$t.tar.gz"
+          echo "$sum  $f" | sha256sum -c - 2>/dev/null || echo "$sum  $f" | shasum -a 256 -c -
+          tar zxf "$f" -C "${CARGO_HOME:-$HOME/.cargo}/bin"
           cargo nextest --version
       - run: cargo xtask ci
 
