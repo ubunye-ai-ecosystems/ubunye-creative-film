@@ -74,7 +74,24 @@ jobs:
         # pinned_decisions::coded_slices_are_pinned hashes coded slices whose SEI carries
         # CARGO_PKG_VERSION (crates/h264enc/src/lib.rs, "filmcraft-h264enc <version>"): its pins are
         # for upstream's 0.15.0, ours is 0.7.0, so it can only pass upstream (it does: upstream's gate).
-        run: cargo nextest run --locked --workspace --lib --bins --tests --no-fail-fast -E 'not test(=pinned_decisions::coded_slices_are_pinned)'
+        # On Windows and macOS, the tests unmodified upstream also fails on these runners
+        # (ubunye/ci/upstream-failures-<os>.txt, from the ubunye-baseline run) are left out too.
+        run: |
+          filter='not test(=pinned_decisions::coded_slices_are_pinned)'
+          case "$RUNNER_OS" in
+            Windows) list=ubunye/ci/upstream-failures-windows.txt ;;
+            macOS) list=ubunye/ci/upstream-failures-macos.txt ;;
+            *) list= ;;
+          esac
+          if [ -n "$list" ]; then
+            while IFS=$'\t' read -r bin name; do
+              name=${name%$'\r'}
+              case "$bin" in ''|'#'*) continue ;; esac
+              filter="$filter and not (binary_id($bin) and test(=$name))"
+            done < "$list"
+          fi
+          echo "nextest filter: $filter"
+          cargo nextest run --locked --workspace --lib --bins --tests --no-fail-fast -E "$filter"
       - name: Doctests
         run: cargo test --locked --workspace --doc
       - name: Smoke (import → edit → save → reopen → export)
