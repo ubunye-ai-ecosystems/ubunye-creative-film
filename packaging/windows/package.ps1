@@ -97,7 +97,11 @@ $ExtraExes = @()
 $ExtraWix = @()
 if ($env:UBUNYE_EXTRA_BIN_DIR) {
   $ExtraExes = @(Get-ChildItem (Join-Path $env:UBUNYE_EXTRA_BIN_DIR '*.exe') | ForEach-Object { Copy-Item $_.FullName $Stage -PassThru } | ForEach-Object FullName)
-  if ($env:UBUNYE_EXTRA_WXS) { $ExtraWix = @($env:UBUNYE_EXTRA_WXS, '-d', "CollabBinDir=$Stage") }
+  if ($env:UBUNYE_EXTRA_WXS) {
+    # collab.wxs needs the WiX Util extension (its custom actions); upstream's MSI only adds UI
+    Invoke-Native 'WiX Util extension' { wix extension add -g WixToolset.Util.wixext/5.0.2 }
+    $ExtraWix = @($env:UBUNYE_EXTRA_WXS, '-ext', 'WixToolset.Util.wixext', '-d', "CollabBinDir=$Stage")
+  }
 }
 & (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'filmcraft.exe') (Join-Path $Stage 'filmcraft-cli.exe') @ExtraExes
 
