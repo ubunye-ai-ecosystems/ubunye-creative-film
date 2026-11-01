@@ -1,0 +1,8 @@
+asset:        org.ubunye.creative.film.png
+title:        Ubunye Film app icon, Linux hicolor theme 32 px
+author:       Ubunye AI Ecosystems
+source:       original work (Ubunye AI Ecosystems artwork from the Ubunye Creative Studio brand system; ubunye/brand/assets/icon.svg)
+license:      MIT OR Apache-2.0 (letter outline: OFL-1.1, DM Serif Display)
+license-file: assets/app-icon/LICENSE.txt
+added:        2026-10-11 by Claude (agent) for Thabang Mashinini-Sekgoto
+notes:        Rendered from ubunye/brand/assets/icon.svg by ubunye/brand/make_icons.py (resvg, Pillow for .ico/.icns) and copied here by ubunye/brand/apply.py. Ubunye AI Ecosystems artwork from the Ubunye Creative Studio brand system, MIT OR Apache-2.0; letter outline from DM Serif Display (SIL OFL 1.1).

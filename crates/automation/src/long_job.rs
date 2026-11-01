@@ -4,6 +4,7 @@
 //! `notifications/cancelled`, deleting the partial output. The session lock is only held for
 //! short polls, so other requests are answered while the export runs.
 
+use std::ffi::OsStr;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
@@ -72,6 +73,7 @@ impl FilmcraftMcp {
                 rep.report(done, total, j["status"].as_str().unwrap_or_default()).await;
             }
             if finished {
+                let offline = state.as_ref().and_then(|j| j.get("offlineMedia").cloned());
                 let result = state.map(|j| j["result"].clone()).unwrap_or(Value::Null);
                 if let Some(e) = result.get("error").and_then(Value::as_str) {
                     return CallToolResult::error(vec![Content::text(format!("export failed: {e}"))]);
@@ -79,6 +81,9 @@ impl FilmcraftMcp {
                 let mut out = start;
                 if let Some(o) = out.as_object_mut() {
                     o.insert("result".into(), result);
+                    if let Some(off) = offline {
+                        o.insert("offlineMedia".into(), off);
+                    }
                 }
                 return CallToolResult::success(vec![Content::text(serde_json::to_string_pretty(&out).unwrap_or_default())]);
             }
@@ -108,16 +113,16 @@ impl FilmcraftMcp {
 
 /// Delete what an interrupted export wrote, and nothing else: the output file itself, the numbered
 /// stills of an image sequence (`<stem><3+ digits>.<same extension>`, only when the output is a
-/// PNG/TIFF/BMP sequence) and the caption sidecar
+/// PNG/TIFF/BMP/JPEG/Targa/DPX sequence) and the caption sidecar
 /// (`<stem>.srt` / `<stem>.vtt`), each only if it was written since `since`. Other files that
 /// merely share the name's stem (`<stem>.aep`, `<stem>2.psd`, `<stem>1.mp4` beside a movie, …) are
 /// never touched, even when they were saved during the export.
 pub fn remove_partial(path: &str, since: SystemTime) {
     let p = Path::new(path);
-    let (Some(dir), Some(stem), Some(file)) = (p.parent(), p.file_stem().and_then(|s| s.to_str()), p.file_name().and_then(|s| s.to_str())) else {
+    let (Some(dir), Some(stem), Some(file)) = (p.parent(), p.file_stem().and_then(OsStr::to_str), p.file_name().and_then(OsStr::to_str)) else {
         return;
     };
-    let ext = p.extension().and_then(|s| s.to_str()).unwrap_or_default();
+    let ext = p.extension().and_then(OsStr::to_str).unwrap_or_default();
     let dir = if dir.as_os_str().is_empty() { Path::new(".") } else { dir };
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     // file times are coarser than the clock
@@ -152,7 +157,7 @@ fn is_export_output(name: &str, file: &str, stem: &str, ext: &str) -> bool {
 /// Whether an export to a file with extension `ext` writes an image sequence (one still per frame).
 fn is_sequence_extension(ext: &str) -> bool {
     use filmcraft_engine::export::Format;
-    Format::from_name(ext).is_some_and(|f| matches!(f, Format::PngSequence | Format::TiffSequence | Format::BmpSequence))
+    Format::from_name(ext).is_some_and(Format::is_image_sequence)
 }
 
 #[cfg(test)]

@@ -4,6 +4,9 @@
 use crate::{Dialog, FilmcraftApp};
 
 pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
+    crate::panels::marker_properties::show(app, ctx);
+    crate::panels::custom_colors::show(app, ctx);
+    crate::panels::palette_manager::show(app, ctx);
     crate::panels::media_dialogs::show(app, ctx);
     crate::panels::color_dialogs::show(app, ctx);
     crate::panels::clip_dialogs::show(app, ctx);
@@ -18,10 +21,13 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
     crate::panels::workspaces::dialogs(app, ctx);
     crate::panels::voiceover::show(app, ctx);
     crate::panels::remix::show(app, ctx);
+    crate::links::show_failed(app, ctx);
     crate::panels::interchange_export::show(app, ctx);
+    crate::panels::caption_export::show(app, ctx);
     crate::panels::frame_export::show(app, ctx);
     crate::panels::project_dialogs::show(app, ctx);
     crate::panels::media_browser::dialogs(app, ctx);
+    crate::panels::misc::history_dialogs(app, ctx);
     let Some(d) = app.dialog else { return };
     if let Some(still_open) = crate::panels::file_dialogs::show(app, ctx, d) {
         if !still_open && app.dialog == Some(d) {
@@ -33,13 +39,14 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
     match d {
         Dialog::About => {
             egui::Window::new(tl!("About FilmCraft"))
-                .id(egui::Id::new("About FilmCraft"))
+                .id(egui::Id::unique("About FilmCraft"))
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .pivot(egui::Align2::CENTER_CENTER)
+                .default_pos(crate::widgets::dialog_center(ctx))
                 .show(ctx, |ui| about(app, ui));
-            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if crate::widgets::escape_closes(ctx) {
                 open = false;
             }
         }
@@ -79,6 +86,12 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
             }
             return;
         }
+        Dialog::ClipMismatch => {
+            if !crate::panels::clip_mismatch::show(app, ctx) && app.dialog == Some(d) {
+                app.dialog = None;
+            }
+            return;
+        }
         Dialog::NewSequence | Dialog::Preferences | Dialog::Recovery | Dialog::RevertConfirm => {}
     }
     if !open {
@@ -92,7 +105,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
 /// Automation ids: `audioGain.<set|adjust|normalizeMax|normalizeAll>` (radio buttons),
 /// `audioGain.<mode>.value` (dB fields), `audioGain.peak`, `audioGain.ok`, `audioGain.cancel`.
 fn audio_gain(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
-    let peak_id = egui::Id::new("audio-gain-peak");
+    let peak_id = egui::Id::unique("audio-gain-peak");
     let rev = app.session.revision;
     let cached: Option<(u64, Option<f64>)> = ctx.data(|d| d.get_temp(peak_id));
     let peak = match cached {
@@ -104,14 +117,16 @@ fn audio_gain(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
         }
     };
     let mut draft = app.ui.audio_gain.clone();
+    crate::widgets::revert_drag_on_escape(ctx, egui::Id::unique("audio-gain-before-drag"), &mut draft);
     let mut keep = true;
     let mut apply = false;
     let mut elems: Vec<(String, egui::Rect, String)> = Vec::new();
     egui::Window::new(tl!("Audio Gain"))
-        .id(egui::Id::new("Audio Gain"))
+        .id(egui::Id::unique("Audio Gain"))
         .collapsible(false)
         .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .show(ctx, |ui| {
             ui.add_space(6.0);
             egui::Grid::new("audio-gain").num_columns(2).spacing([12.0, 10.0]).show(ui, |ui| {
@@ -127,7 +142,7 @@ fn audio_gain(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
                     if r.clicked() {
                         draft.mode = id.to_string();
                     }
-                    let f = ui.add_enabled(draft.mode == id, egui::DragValue::new(v).speed(0.1).range(-96.0..=96.0).suffix(" dB"));
+                    let f = ui.add_enabled(draft.mode == id, crate::widgets::number_drag(v).speed(0.1).range(-96.0..=96.0).suffix(" dB"));
                     elems.push((format!("audioGain.{id}.value"), f.rect, format!("{v:.1} dB")));
                     ui.end_row();
                 }
@@ -153,7 +168,7 @@ fn audio_gain(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
     for (id, r, l) in elems {
         app.auto.add(&id, r, &l);
     }
-    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if crate::widgets::escape_closes(ctx) {
         keep = false;
     }
     if apply {
@@ -188,17 +203,19 @@ fn add_tracks(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
     let names = |tracks: &[filmcraft_engine::project::Track]| tracks.iter().map(|t| t.name.clone()).collect::<Vec<_>>();
     let (vnames, anames, snames) = (names(&seq.video_tracks), names(&seq.audio_tracks), names(&seq.submix_tracks));
     let mut d = app.ui.add_tracks.clone();
+    crate::widgets::revert_drag_on_escape(ctx, egui::Id::unique("add-tracks-before-drag"), &mut d);
     let mut keep = true;
     let mut apply = false;
     let mut elems: Vec<(String, egui::Rect, String)> = Vec::new();
     let audio_types: [(&str, &str); 4] = [("standard", tl!("Standard")), ("5.1", "5.1"), ("adaptive", tl!("Adaptive")), ("mono", tl!("Mono"))];
     let submix_types: [(&str, &str); 4] = [("stereo", tl!("Stereo")), ("5.1", "5.1"), ("adaptive", tl!("Adaptive")), ("mono", tl!("Mono"))];
     egui::Window::new(tl!("Add Tracks"))
-        .id(egui::Id::new("Add Tracks"))
+        .id(egui::Id::unique("Add Tracks"))
         .collapsible(false)
         .resizable(false)
         .default_width(320.0)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .show(ctx, |ui| {
             // everything spans the width the window has: no empty band beside the fields
             ui.set_width(ui.available_width());
@@ -225,7 +242,7 @@ fn add_tracks(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         label(ui, tl!("Amount"));
-                        let r = ui.add(egui::DragValue::new(amount).range(0..=99).speed(0.1));
+                        let r = ui.add(crate::widgets::number_drag(amount).range(0..=99).speed(0.1));
                         elems.push((format!("addTracks.{kind}.amount"), r.rect, amount.to_string()));
                     });
                     ui.horizontal(|ui| {
@@ -239,7 +256,7 @@ fn add_tracks(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
                         let list_w = ui.available_width();
                         // nowhere to choose from while the sequence has no track of the kind
                         ui.add_enabled_ui(!tracks.is_empty(), |ui| {
-                            let r = egui::ComboBox::from_id_salt(("add-tracks-placement", kind)).selected_text(&shown).width(list_w).show_ui(ui, |ui| {
+                            let r = craft_ui::ComboBox::from_id_salt(("add-tracks-placement", kind)).selected_text(&shown).width(list_w).show_ui(ui, |ui| {
                                 for n in 0..=tracks.len() {
                                     let label = place(n);
                                     let o = ui.selectable_value(after, n, &label);
@@ -254,7 +271,7 @@ fn add_tracks(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
                             label(ui, tl!("Track type"));
                             let shown = types.iter().find(|(id, _)| *id == chosen.as_str()).map_or(types[0].1, |(_, label)| label).to_string();
                             let list_w = ui.available_width();
-                            let r = egui::ComboBox::from_id_salt(("add-tracks-type", kind)).selected_text(&shown).width(list_w).show_ui(ui, |ui| {
+                            let r = craft_ui::ComboBox::from_id_salt(("add-tracks-type", kind)).selected_text(&shown).width(list_w).show_ui(ui, |ui| {
                                 for (id, label) in types {
                                     let o = ui.selectable_value(chosen, id.to_string(), *label);
                                     elems.push((format!("addTracks.{kind}.type.option.{id}"), o.rect, label.to_string()));
@@ -282,7 +299,7 @@ fn add_tracks(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
     for (id, r, l) in elems {
         app.auto.add(&id, r, &l);
     }
-    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if crate::widgets::escape_closes(ctx) {
         keep = false;
     }
     if ctx.input(|i| i.key_pressed(egui::Key::Enter)) && !ctx.egui_wants_keyboard_input() {
@@ -306,33 +323,39 @@ fn add_tracks(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
     keep
 }
 
-/// Sequence ▸ Delete Tracks…: "Delete Video Tracks" / "Delete Audio Tracks" checkboxes, each with a
-/// track choice (All Empty Tracks or one track). Returns whether the dialog stays open.
+/// Sequence ▸ Delete Tracks…: "Delete Video Tracks" / "Delete Audio Tracks" (and, when the sequence
+/// has caption tracks, "Delete Caption Tracks") checkboxes, each with a track choice (All Empty
+/// Tracks or one track). Returns whether the dialog stays open.
 ///
-/// Automation ids: `deleteTracks.video`, `deleteTracks.audio` (checkboxes),
-/// `deleteTracks.video.target`, `deleteTracks.audio.target` (track menus),
-/// `deleteTracks.<kind>.option.<empty|V1|A2…>` (menu entries while open), `deleteTracks.ok`,
-/// `deleteTracks.cancel`.
+/// Automation ids: `deleteTracks.video`, `deleteTracks.audio`, `deleteTracks.captions` (checkboxes),
+/// `deleteTracks.<kind>.target` (track menus), `deleteTracks.<kind>.option.<empty|V1|A2|C1…>`
+/// (menu entries while open), `deleteTracks.ok`, `deleteTracks.cancel`.
 fn delete_tracks(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
     let Some(seq) = app.session.active_sequence() else { return false };
     let names = |n: usize, p: &str| (1..=n).map(|i| format!("{p}{i}")).collect::<Vec<_>>();
     let vnames = names(seq.video_tracks.len(), "V");
     let anames = names(seq.audio_tracks.len(), "A");
+    let cnames = names(seq.caption_tracks.len(), "C");
     let mut draft = app.ui.delete_tracks.clone();
     let mut keep = true;
     let mut apply = false;
     let mut elems: Vec<(String, egui::Rect, String)> = Vec::new();
     egui::Window::new(tl!("Delete Tracks"))
-        .id(egui::Id::new("Delete Tracks"))
+        .id(egui::Id::unique("Delete Tracks"))
         .collapsible(false)
         .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .show(ctx, |ui| {
             ui.set_min_width(300.0);
             for (kind, title, delete, on, target, list) in [
                 ("video", tl!("Video Tracks"), tl!("Delete Video Tracks"), &mut draft.video, &mut draft.video_target, &vnames),
                 ("audio", tl!("Audio Tracks"), tl!("Delete Audio Tracks"), &mut draft.audio, &mut draft.audio_target, &anames),
+                ("captions", tl!("Caption Tracks"), tl!("Delete Caption Tracks"), &mut draft.captions, &mut draft.captions_target, &cnames),
             ] {
+                if list.is_empty() {
+                    continue;
+                }
                 ui.add_space(4.0);
                 ui.label(egui::RichText::new(title).strong());
                 let label = delete.to_string();
@@ -342,7 +365,7 @@ fn delete_tracks(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
                     ui.add_space(22.0);
                     let shown = if target == "empty" { tl!("All Empty Tracks").to_string() } else { target.clone() };
                     ui.add_enabled_ui(*on, |ui| {
-                        let r = egui::ComboBox::from_id_salt(("delete-tracks", kind)).selected_text(&shown).width(170.0).show_ui(ui, |ui| {
+                        let r = craft_ui::ComboBox::from_id_salt(("delete-tracks", kind)).selected_text(&shown).width(170.0).show_ui(ui, |ui| {
                             let e = ui.selectable_value(target, "empty".to_string(), tl!("All Empty Tracks"));
                             elems.push((format!("deleteTracks.{kind}.option.empty"), e.rect, "All Empty Tracks".into()));
                             for n in list {
@@ -362,7 +385,7 @@ fn delete_tracks(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
                     keep = false;
                 }
                 let o = ui.add_enabled(
-                    draft.video || draft.audio,
+                    draft.video || draft.audio || (draft.captions && !cnames.is_empty()),
                     egui::Button::new(egui::RichText::new(tl!("OK")).color(egui::Color32::WHITE)).fill(app.tokens.accent),
                 );
                 elems.push(("deleteTracks.ok".into(), o.rect, "OK".into()));
@@ -374,7 +397,7 @@ fn delete_tracks(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
     for (id, r, l) in elems {
         app.auto.add(&id, r, &l);
     }
-    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if crate::widgets::escape_closes(ctx) {
         keep = false;
     }
     if apply {
@@ -385,6 +408,9 @@ fn delete_tracks(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
         if draft.audio {
             p.insert("audio".into(), serde_json::json!(draft.audio_target));
         }
+        if draft.captions && !cnames.is_empty() {
+            p.insert("captions".into(), serde_json::json!(draft.captions_target));
+        }
         if let Err(e) = app.session.execute("sequence.deleteTracks", serde_json::Value::Object(p)) {
             app.ui.status = e.to_string();
         }
@@ -394,14 +420,14 @@ fn delete_tracks(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
     keep
 }
 
-/// Help ▸ About FilmCraft, in three tabs: About (version and the ArtCraft community links),
+/// Help ▸ About, in three tabs: About (version, upstream credit and the community links),
 /// Contributors and Models (the credits compiled in from `contributors/contributors.json`, see
 /// `crate::credits` and docs/contributors.md).
 ///
 /// Automation ids: `about.tab.about`, `about.tab.contributors`, `about.tab.models`; the About tab's
 /// links and the credits controls are listed on [`about_tab`] and [`crate::credits::contributors_ui`].
 fn about(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
-    let tab_id = egui::Id::new("about_tab");
+    let tab_id = egui::Id::unique("about_tab");
     let mut tab = ui.data_mut(|d| d.get_temp::<u8>(tab_id)).unwrap_or(0);
     ui.horizontal(|ui| {
         for (i, (id, label)) in [("about", tl!("About")), ("contributors", tl!("Contributors")), ("models", tl!("Models"))].into_iter().enumerate() {
@@ -429,8 +455,8 @@ fn about(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
     }
 }
 
-/// About ▸ About: version, licence and the ArtCraft community links. Joining the Discord is the
-/// first, accented button.
+/// About ▸ About: our mark, name, version, the plain-text upstream credit, licence and the
+/// community links (Ubunye AI Ecosystems). Joining the community is the first, accented button.
 ///
 /// Automation ids: `about.discord`, `about.website`, `about.appPage`, `about.github`,
 /// `about.reportIssue`.
@@ -439,13 +465,16 @@ fn about_tab(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
     use crate::links;
     let t = app.tokens;
     ui.set_width(380.0);
-    // ArtCraft wordmark (first-party trademark, docs/brand/).
-    let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 30.0), egui::Sense::hover());
-    crate::brand::paint_wordmark(ui, egui::pos2(r.min.x, r.center().y), 20.0, app.ui.dark);
+    // Ubunye: our mark and name (crate::brand) and the plain-text upstream credit.
+    let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 56.0), egui::Sense::hover());
+    crate::brand::paint_mark(ui, egui::pos2(r.min.x, r.center().y), 56.0);
     ui.add_space(6.0);
-    ui.heading("FilmCraft");
+    ui.heading(crate::brand::NAME);
     ui.label(tlf!("Version {version}", version = env!("CARGO_PKG_VERSION")));
-    ui.label(tl!("A clean-room, pure-Rust non-linear video editor. Part of the ArtCraft family."));
+    ui.label(crate::brand::PART_OF);
+    let credit = ui.hyperlink_to(crate::brand::BASED_ON, crate::brand::UPSTREAM_URL);
+    app.auto.add("about.upstream", credit.rect, crate::brand::BASED_ON);
+    ui.label(tl!("A clean-room, pure-Rust non-linear video editor."));
     ui.add_space(10.0);
     let mut link = |ui: &mut egui::Ui, id: &str, icon: Icon, label: &str, url: &str, primary: bool| {
         let size = egui::vec2(ui.available_width(), if primary { 36.0 } else { 28.0 });
@@ -471,13 +500,13 @@ fn about_tab(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
             fg,
         );
         if resp.clicked() {
-            links::open(ui.ctx(), url);
+            links::open(app, ui.ctx(), url);
         }
     };
-    link(ui, "discord", Icon::Chat, tl!("Join the ArtCraft Discord"), links::DISCORD, true);
+    link(ui, "discord", Icon::Chat, tl!("Join the Ubunye Community"), links::DISCORD, true);
     ui.add_space(6.0);
-    link(ui, "website", Icon::Globe, "getartcraft.com", links::WEBSITE, false);
-    link(ui, "appPage", Icon::Globe, tl!("FilmCraft on getartcraft.com"), links::APP_PAGE, false);
+    link(ui, "website", Icon::Globe, "thabangvision.com", links::WEBSITE, false);
+    link(ui, "appPage", Icon::Globe, tl!("FilmCraft on thabangvision.com"), links::APP_PAGE, false);
     link(ui, "github", Icon::Code, tl!("Source code on GitHub"), links::GITHUB, false);
     link(ui, "reportIssue", Icon::Code, tl!("Report an issue"), links::ISSUES, false);
     ui.add_space(10.0);

@@ -13,8 +13,8 @@ release: 1
 section: video
 priority: optional
 maintainer: ${FILMCRAFT_MAINTAINER}
-vendor: Learning Machines LLC
-homepage: https://getartcraft.com/apps/filmcraft
+vendor: Ubunye AI Ecosystems
+homepage: https://www.thabangvision.com/tools/film
 license: MIT OR Apache-2.0
 description: |-
   Open-source, native video editor: edit video, color and sound.
@@ -51,6 +51,9 @@ overrides:
       - libxkbcommon
       - (vulkan-loader or libglvnd-egl)
       - alsa-lib
+      # Ubunye: links the shared kopanod (ubunye/packaging/linux/postinst.sh.in); Fedora's
+      # alternatives and openSUSE's update-alternatives both provide it. dpkg has it on Debian.
+      - /usr/sbin/update-alternatives
     recommends:
       - libwayland-client
       - libX11

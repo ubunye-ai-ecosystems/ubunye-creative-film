@@ -1,10 +1,10 @@
 {
   "mcpServers": {
-    "filmcraft": {
+    "ubunye-creative-film": {
       "command": "target/release/filmcraft-cli",
       "args": ["mcp", "--bridge", "127.0.0.1:9876"]
     },
-    "filmcraft-headless": {
+    "ubunye-creative-film-headless": {
       "command": "target/release/filmcraft-cli",
       "args": ["mcp", "--demo"]
     }

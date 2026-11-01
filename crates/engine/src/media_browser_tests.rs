@@ -29,6 +29,7 @@ impl FakeFs {
             "/home/me/Movies/edit.edl",
             "/home/me/Movies/subs.srt",
             "/home/me/Movies/clip.mov",
+            "/home/me/Movies/CLIP.MOV",
         ] {
             files.insert(f.to_string(), vec![0; 16]);
         }
@@ -100,7 +101,7 @@ fn listing_puts_folders_first_and_hides_unsupported_files() {
     assert_eq!(l["dir"], "/home/me");
     assert_eq!(names(&l), ["Movies"]);
     let l = s.execute("mediaBrowser.list", json!({"path": "/home/me/Movies"})).unwrap();
-    assert_eq!(names(&l), ["Selects", "A-interview.wav", "b-roll.wav", "clip.mov", "edit.edl", "shot_0001.png", "shot_0002.png", "subs.srt"]);
+    assert_eq!(names(&l), ["Selects", "A-interview.wav", "b-roll.wav", "CLIP.MOV", "clip.mov", "edit.edl", "shot_0001.png", "shot_0002.png", "subs.srt"]);
     let e = &l["entries"][0];
     assert_eq!((e["isDir"].as_bool(), e["kind"].as_str()), (Some(true), Some("folder")));
     let shot = l["entries"].as_array().unwrap().iter().find(|e| e["name"] == "shot_0001.png").unwrap();
@@ -117,7 +118,7 @@ fn file_type_filter() {
     let l = s.execute("mediaBrowser.list", json!({"path": "/home/me/Movies", "fileTypes": "image"})).unwrap();
     assert_eq!(names(&l), ["Selects", "shot_0001.png", "shot_0002.png"]);
     let l = s.execute("mediaBrowser.list", json!({"path": "/home/me/Movies", "fileTypes": "mov"})).unwrap();
-    assert_eq!(names(&l), ["Selects", "clip.mov"]);
+    assert_eq!(names(&l), ["Selects", "CLIP.MOV", "clip.mov"]);
     // the setting persists and applies by default
     s.execute("mediaBrowser.settings", json!({"fileTypes": "project"})).unwrap();
     let l = s.execute("mediaBrowser.list", json!({"path": "/home/me/Movies"})).unwrap();
@@ -127,6 +128,18 @@ fn file_type_filter() {
     s.execute("mediaBrowser.settings", json!({"view": "thumbnails", "columns": ["size", "Frame Rate"]})).unwrap();
     assert_eq!(s.prefs.media_browser.view, "thumbnails");
     assert_eq!(s.prefs.media_browser.columns, ["Name", "Size", "Frame Rate"]);
+}
+
+#[test]
+fn column_widths_persist_clamped() {
+    let mut s = session();
+    s.execute("mediaBrowser.settings", json!({"columnWidths": {"name": 300, "Size": 5}})).unwrap();
+    s.execute("mediaBrowser.settings", json!({"columnWidths": {"Frame Rate": 90}})).unwrap();
+    let w = &s.prefs.media_browser.column_widths;
+    assert_eq!((w.get("Name"), w.get("Size"), w.get("Frame Rate")), (Some(&300.0), Some(&30.0), Some(&90.0)));
+    assert!(s.execute("mediaBrowser.settings", json!({"columnWidths": {"Colour": 100}})).is_err());
+    assert!(s.execute("mediaBrowser.settings", json!({"columnWidths": {"Name": "wide"}})).is_err());
+    assert_eq!(s.prefs.media_browser.column_widths.len(), 3);
 }
 
 #[test]
@@ -210,6 +223,47 @@ fn import_the_selection_and_open_in_source() {
     assert_eq!(r["items"].as_array().unwrap().len(), 1);
 }
 
+/// Importing a folder keeps its structure (#411): the folder becomes a bin named after it, each
+/// sub-folder with media a bin inside that, and every file lands in its folder's bin.
+#[test]
+fn importing_a_folder_mirrors_its_sub_folders_as_bins() {
+    let mut fs = FakeFs::new();
+    let wav = filmcraft_media::wav::write_wav16(&[0.0; 4800], 2, 48_000);
+    fs.dirs.extend(["/Shoot", "/Shoot/Day 1", "/Shoot/Day 1/Cam A", "/Shoot/Empty"].map(String::from));
+    for f in ["/Shoot/slate.wav", "/Shoot/Day 1/room.wav", "/Shoot/Day 1/Cam A/take1.wav", "/Shoot/Day 1/Cam A/take2.wav"] {
+        fs.files.get_mut().unwrap().insert(f.into(), wav.clone());
+    }
+    let mut s = Session::new(Arc::new(fs));
+    let r = s.execute("mediaBrowser.import", json!({"paths": ["/Shoot"]})).unwrap();
+    assert_eq!(r["items"].as_array().unwrap().len(), 4, "{r}");
+    assert_eq!(r["bins"].as_array().unwrap().len(), 3, "{r}");
+    let tree = |b: &filmcraft_project::Bin| -> Vec<String> {
+        b.children
+            .iter()
+            .map(|c| match c {
+                filmcraft_project::BinEntry::Bin(b) => format!("bin {}", b.name),
+                filmcraft_project::BinEntry::Item(i) => s.project.item(*i).unwrap().name.clone(),
+            })
+            .collect()
+    };
+    let sub = |b: &filmcraft_project::Bin, name: &str| -> filmcraft_project::Bin {
+        b.children
+            .iter()
+            .find_map(|c| match c {
+                filmcraft_project::BinEntry::Bin(b) if b.name == name => Some(b.clone()),
+                _ => None,
+            })
+            .unwrap()
+    };
+    assert_eq!(tree(&s.project.root), ["bin Shoot"]);
+    let shoot = sub(&s.project.root, "Shoot");
+    // a folder without media gets no bin
+    assert_eq!(tree(&shoot), ["slate.wav", "bin Day 1"]);
+    let day = sub(&shoot, "Day 1");
+    assert_eq!(tree(&day), ["room.wav", "bin Cam A"]);
+    assert_eq!(tree(&sub(&day, "Cam A")), ["take1.wav", "take2.wav"]);
+}
+
 #[test]
 fn import_with_ingest_settings() {
     let mut s = session();
@@ -275,4 +329,60 @@ fn probing_large_unstreamable_files_does_not_read_them_whole() {
     let r = s.execute("file.import", json!({"paths": [wav.to_string_lossy()]})).unwrap();
     assert_eq!(r["items"].as_array().unwrap().len(), 1);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// #1292: an Avid Log Exchange file is something FilmCraft writes (File ▸ Export), not a project
+/// it can import, so the browser doesn't list it with the project files.
+#[test]
+fn ale_logs_are_not_offered_for_import() {
+    assert_eq!(media_browser::kind_of("clips.ale"), None);
+    assert!(!media_browser::extensions().contains(&"ale"));
+    assert_eq!(media_browser::kind_of("cut.edl"), Some("project"));
+}
+
+/// The background probe returns `None` until its thread has the result, then the same properties
+/// as the blocking probe; a path that isn't media is answered at once.
+#[cfg(any(unix, windows))]
+#[test]
+fn probe_background_returns_the_blocking_probe_result() {
+    let dir = crate::media_test_util::tmp_dir("browser-probe-background");
+    let wav = dir.join("voice.wav");
+    std::fs::write(&wav, filmcraft_media::wav::write_wav16(&[0.1; 9_600], 2, 48_000)).unwrap();
+    let path = wav.to_string_lossy().to_string();
+    let mut s = Session::default();
+    let mut got = None;
+    for _ in 0..500 {
+        got = media_browser::probe_background(&mut s, &path);
+        if got.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let background = got.expect("background probe finished").expect("wav has properties");
+    let mut fresh = Session::default();
+    let blocking = media_browser::probe(&mut fresh, &path).unwrap();
+    assert_eq!(background.duration, blocking.duration);
+    assert_eq!(background.audio().map(|a| a.sample_rate), blocking.audio().map(|a| a.sample_rate));
+    let notes = dir.join("notes.txt");
+    assert_eq!(media_browser::probe_background(&mut s, &notes.to_string_lossy()), Some(None));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// AAF and OMF documents import through `file.import` like EDL, FCP7 XML, FCPXML and OTIO, so the
+/// browser lists them as projects too, including the `.omfi` spelling the importer accepts.
+#[test]
+fn every_interchange_document_the_importer_reads_is_listed() {
+    for ext in crate::interchange::EXTENSIONS {
+        let name = format!("cut.{ext}");
+        assert_eq!(media_browser::kind_of(&name), Some("project"), "{name}");
+        assert_eq!(media_browser::kind_of(&name.to_ascii_uppercase()), Some("project"), "{name}");
+        assert!(media_browser::extensions().contains(&ext), "{ext}");
+    }
+    let mut s = session();
+    s.services.write_file("/home/me/Movies/cut.aaf", &[0; 16]).unwrap();
+    s.services.write_file("/home/me/Movies/mix.omf", &[0; 16]).unwrap();
+    let l = s.execute("mediaBrowser.list", json!({"path": "/home/me/Movies", "fileTypes": "project"})).unwrap();
+    assert_eq!(names(&l), ["Selects", "cut.aaf", "edit.edl", "mix.omf"]);
+    let l = s.execute("mediaBrowser.list", json!({"path": "/home/me/Movies", "fileTypes": "aaf"})).unwrap();
+    assert_eq!(names(&l), ["Selects", "cut.aaf"]);
 }

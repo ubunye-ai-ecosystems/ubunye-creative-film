@@ -1,0 +1,6 @@
+# Ubunye pin (upstream floats on stable). 1.99.1 since 2026-11-01: on 1.97.0 a sequence edited
+# in as its clips lost its transitions (nest_editing_tests fails; passes on 1.99.1 like upstream).
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]

@@ -92,7 +92,7 @@ impl VideoEncoder for NvencEncoder {
                 // `Nvenc::new` built and validated the record, so there is always one for HEVC
                 let mut e = SampleEntry::hevc(self.enc.hevc_config().cloned().unwrap_or_default(), w, h);
                 // HDR: `colr` (BT.2020 + PQ / HLG) and, for PQ, `mdcv` / `clli`, as the software H.264 encoder does
-                // (nclx, whatever the container: readers take it from either). SDR stays as it was, with the VUI only.
+                // (nclx, whatever the container: readers take it from either). SDR gets a BT.709 `colr` only (#2142).
                 self.signal.apply_to(&mut e, false);
                 e
             }
@@ -108,13 +108,13 @@ impl VideoEncoder for NvencEncoder {
             return Err(ExportError::Encode(format!("NVENC: a {}x{} picture for a {}x{} encoder", f.width, f.height, self.w, self.h)));
         }
         let (w, h) = (self.w as usize, self.h as usize);
-        let hint = if self.enc.codec() == Codec::H264 { " (turn Export ▸ Hardware encoding off to use the software encoder)" } else { "" };
+        let hint = if self.enc.codec() == Codec::H264 { " (turn Export > Hardware encoding off to use the software encoder)" } else { "" };
         let ps = match (self.enc.is_ten_bit(), f.hdr) {
             // Main 10 takes the encoded R'G'B' floats: 10-bit limited-range BT.2020 NCL (or the signal's matrix)
             (true, Some(rgb)) => {
                 let (kr, kb) = self.signal.kr_kb();
                 filmcraft_export::timed(filmcraft_export::Stage::Convert, || {
-                    filmcraft_export::rgbf_to_yuv420_10(rgb, w, h, kr, kb, &mut self.y16, &mut self.u16, &mut self.v16)
+                    filmcraft_export::rgbf_to_yuv420_10(rgb, w, h, filmcraft_export::Matrix::new(kr, kb), &mut self.y16, &mut self.u16, &mut self.v16)
                 })?;
                 self.enc.encode_10(&self.y16, &self.u16, &self.v16, f.index).map_err(|e| ExportError::Encode(format!("NVENC: {e}{hint}")))?
             }
@@ -161,6 +161,9 @@ fn config(format: Format, w: u32, h: u32, rate: FrameRate, s: &ExportSettings) -
     }
     if !matches!(s.h264_pass, H264Pass::Single) || (hevc && s.bitrate_mode == BitrateMode::Vbr2Pass) {
         return Err("two-pass VBR".into());
+    }
+    if s.bitrate_mode == BitrateMode::Crf {
+        return Err("CRF (constant quality)".into());
     }
     // the hardware path writes the aspect ratio of H.264 only
     if hevc && s.pixel_aspect.is_some_and(|(n, d)| n != d) {
@@ -357,6 +360,7 @@ mod tests {
             ("an unwritable colour signal", ExportSettings { signal: ColorSignal { primaries: 9, transfer: 1, matrix: 1 }, ..ok.clone() }),
             ("HDR with BT.709 primaries", ExportSettings { signal: ColorSignal { primaries: 1, transfer: 16, matrix: 9 }, ..ok.clone() }),
             ("two-pass", ExportSettings { bitrate_mode: BitrateMode::Vbr2Pass, ..ok.clone() }),
+            ("CRF", ExportSettings { bitrate_mode: BitrateMode::Crf, ..ok.clone() }),
             ("analysis pass", ExportSettings { h264_pass: H264Pass::First, ..ok.clone() }),
             ("interlaced", ExportSettings { field_order: FieldOrder::UpperFirst, ..ok.clone() }),
             ("non-square pixels", ExportSettings { pixel_aspect: Some((4, 3)), ..ok.clone() }),

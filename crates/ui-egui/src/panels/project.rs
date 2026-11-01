@@ -91,9 +91,17 @@ pub struct ProjectPanelUi {
     pub active_tab: Option<usize>,
     /// The bin selected in the panel (rename, open).
     pub selected_bin: Option<u64>,
+    /// The item a Shift-click selects a range from: the last one clicked without Shift.
+    pub anchor: Option<u64>,
     pub rename: Option<Rename>,
     pub dialog: Option<ProjectDialog>,
     pub hover: Option<Hover>,
+    /// List view column being resized and its width so far; the preference is written on release.
+    #[serde(skip)]
+    pub column_drag: Option<(String, f32)>,
+    /// The Project panel's thumbnail size while its slider is dragged; written on release.
+    #[serde(skip)]
+    pub icon_size_drag: Option<f32>,
 }
 
 /// Which panel instance a view belongs to.
@@ -147,7 +155,7 @@ pub fn view_of(app: &FilmcraftApp, inst: Inst) -> View {
                 prefix: "project".into(),
                 bin: valid_bin(app, app.ui.project_panel.bin).unwrap_or(root),
                 mode: v.mode,
-                icon_size: v.icon_size,
+                icon_size: app.ui.project_panel.icon_size_drag.unwrap_or(v.icon_size),
             }
         }
     }
@@ -254,6 +262,21 @@ pub fn visible_items(app: &FilmcraftApp, inst: Inst) -> Vec<ItemId> {
     crate::panels::project_views::items_in_view(app, &v, &app.ui.project_search.to_ascii_lowercase())
 }
 
+/// The command Select All (Cmd+A) runs with the Project panel focused: the items of the shown
+/// bin, plus those of sub-bins twirled open in List view (`project.selectAll {bin, expanded}`).
+/// Items in closed bins and in bins of other tabs stay unselected, as in Premiere (#456). While a
+/// search filters the panel, exactly the rows it shows (`project.select {items}`).
+pub fn select_all_command(app: &FilmcraftApp) -> (String, Value) {
+    let inst = shown_inst(app);
+    if !app.ui.project_search.is_empty() {
+        let items: Vec<u64> = visible_items(app, inst).into_iter().map(|i| i.0).collect();
+        return ("project.select".into(), json!({"items": items}));
+    }
+    let v = view_of(app, inst);
+    let expanded: &[u64] = if v.mode == ViewMode::List { &app.ui.expanded_bins } else { &[] };
+    ("project.selectAll".into(), json!({"bin": v.bin.0, "expanded": expanded}))
+}
+
 // ------------------------------------------------------------------------------------ panel
 
 pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
@@ -293,7 +316,7 @@ fn tab_strip(app: &mut FilmcraftApp, ui: &mut egui::Ui, strip: Rect, docked: &[u
             _ => false,
         };
         let id = k.map_or("project.tab.project".to_string(), |k| format!("project.tab.{k}"));
-        let resp = ui.interact(r, egui::Id::new(&id), Sense::click());
+        let resp = ui.interact(r, egui::Id::unique(&id), Sense::click());
         app.auto.add(&id, r, &label);
         if is_active || resp.hovered() {
             ui.painter().rect_filled(r, 3.0, if is_active { t.pressed } else { t.hover });
@@ -304,7 +327,7 @@ fn tab_strip(app: &mut FilmcraftApp, ui: &mut egui::Ui, strip: Rect, docked: &[u
         }
         if let Some(k) = k {
             let cr = Rect::from_center_size(pos2(r.max.x - 11.0, r.center().y), vec2(12.0, 12.0));
-            let cresp = ui.interact(cr, egui::Id::new(("ptab-close", k)), Sense::click()).on_hover_text(tl!("Close"));
+            let cresp = ui.interact(cr, egui::Id::unique(("ptab-close", k)), Sense::click()).on_hover_text(tl!("Close"));
             app.auto.add(&format!("project.tab.{k}.close"), cr, "Close");
             icons::paint(ui.painter(), cr.shrink(2.0), Icon::Close, if cresp.hovered() { t.text } else { t.text_dim });
             if cresp.clicked() || resp.middle_clicked() {
@@ -335,7 +358,7 @@ pub fn floating(app: &mut FilmcraftApp, ctx: &egui::Context) {
         let mut open = true;
         let root = app.ui.project_panel.tabs[k].bin == app.session.project.root.id.0;
         egui::Window::new(if root { tlf!("Project: {name}", name = app.session.project.name) } else { tlf!("Bin: {name}", name) })
-            .id(egui::Id::new(("bin-window", k)))
+            .id(egui::Id::unique(("bin-window", k)))
             .open(&mut open)
             .default_size(vec2(520.0, 360.0))
             .min_size(vec2(320.0, 220.0))
@@ -379,15 +402,16 @@ fn body(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, v: &View, actions
         Inst::Main => root_id,
         Inst::Tab(k) => BinId(app.ui.project_panel.tabs[k].bin),
     };
-    let up = Rect::from_min_size(pos2(head.min.x, head.center().y - 9.0), vec2(22.0, 18.0));
-    let up_resp = ui.interact(up, egui::Id::new((&pre, "up")), Sense::click()).on_hover_text(tl!("Up one level"));
+    let up = Rect::from_min_size(pos2(head.min.x, head.center().y - 11.0), vec2(24.0, 22.0));
+    let up_resp = ui.interact(up, egui::Id::unique((&pre, "up")), Sense::click()).on_hover_text(tl!("Up one level"));
     app.auto.add(&format!("{pre}.up"), up, "Up one level");
     let can_up = v.bin != top;
-    if up_resp.hovered() && can_up {
-        ui.painter().rect_filled(up, 3.0, t.hover);
+    // a bordered button while there is a level to go up to, so it reads as clickable
+    if can_up {
+        ui.painter().rect_filled(up, 3.0, if up_resp.hovered() { t.hover } else { t.field_bg });
+        ui.painter().rect_stroke(up, 3.0, Stroke::new(1.0, t.field_border), egui::StrokeKind::Inside);
     }
-    icons::paint(ui.painter(), up.shrink(3.0), Icon::Folder, if can_up { t.icon } else { t.text_faint });
-    icons::paint(ui.painter(), Rect::from_center_size(up.center() + vec2(0.0, 1.0), vec2(8.0, 8.0)), Icon::ArrowUp, if can_up { t.icon } else { t.text_faint });
+    icons::paint(ui.painter(), Rect::from_center_size(up.center(), vec2(14.0, 14.0)), Icon::ArrowUp, if can_up { t.text } else { t.text_faint });
     if up_resp.clicked() && can_up {
         let parent = parent_bin(&app.session.project.root, v.bin);
         navigate(app, v.inst, parent.map(|b| b.0));
@@ -412,7 +436,7 @@ fn body(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, v: &View, actions
     app.ui.project_search = q;
     app.auto.add(&format!("{pre}.search"), search_rect, "Search");
     let find = Rect::from_min_size(pos2(search_rect.max.x + 8.0, row.min.y), vec2(24.0, 22.0));
-    let fr = ui.interact(find, egui::Id::new((&pre, "find")), Sense::click()).on_hover_text(tl!("Find…"));
+    let fr = ui.interact(find, egui::Id::unique((&pre, "find")), Sense::click()).on_hover_text(tl!("Find…"));
     app.auto.add(&format!("{pre}.find"), find, "Find…");
     if fr.hovered() {
         ui.painter().rect_filled(find, 3.0, t.hover);
@@ -545,7 +569,7 @@ fn footer(app: &mut FilmcraftApp, ui: &mut egui::Ui, bar: Rect, v: &View, action
         (Icon::Freeform, ViewMode::Freeform, tl!("Freeform View")),
     ] {
         let r = Rect::from_min_size(pos2(x, bar.min.y + 5.0), vec2(26.0, 22.0));
-        let resp = ui.interact(r, egui::Id::new((pre, "pv", tip)), Sense::click()).on_hover_text(tip);
+        let resp = ui.interact(r, egui::Id::unique((pre, "pv", tip)), Sense::click()).on_hover_text(tip);
         app.auto.add(&format!("{pre}.view.{mode:?}"), r, tip);
         if v.mode == mode {
             ui.painter().rect_filled(r, 4.0, t.pressed);
@@ -558,26 +582,42 @@ fn footer(app: &mut FilmcraftApp, ui: &mut egui::Ui, bar: Rect, v: &View, action
         }
         x += 28.0;
     }
-    // thumbnail size: in-memory while dragging, saved on release
+    // thumbnail size: in UI state while dragging, saved on release (had the drag changed the
+    // preferences already, the command would see nothing new and not write preferences.json)
     let sw = (bar.width() - 300.0).clamp(40.0, 120.0);
     let sr = Rect::from_min_size(pos2(x + 8.0, bar.min.y + 8.0), vec2(sw, 16.0));
     let mut sz = v.icon_size;
-    let resp = ui.put(sr, egui::Slider::new(&mut sz, 48.0..=400.0).show_value(false));
+    let resp = crate::widgets::accessible_name(ui.put(sr, egui::Slider::new(&mut sz, 48.0..=400.0).show_value(false)), tl!("Zoom"));
     app.auto.add(&format!("{pre}.iconSize"), sr, "Zoom");
+    // a drag ended by Escape goes back to the size it started from (#580)
+    let orig_id = egui::Id::unique((pre, "icon-size-before-drag"));
+    if resp.drag_started() {
+        ui.data_mut(|d| d.insert_temp(orig_id, v.icon_size));
+    }
+    let escaped = resp.drag_stopped() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+    if resp.drag_stopped()
+        && let Some(before) = ui.data_mut(|d| d.remove_temp(orig_id))
+        && escaped
+    {
+        sz = before;
+    }
     if sz != v.icon_size {
         match v.inst {
-            Inst::Main => app.session.prefs.project_panel.view.icon_size = sz,
+            Inst::Main => app.ui.project_panel.icon_size_drag = Some(sz),
             Inst::Tab(k) => app.ui.project_panel.tabs[k].icon_size = sz,
         }
     }
     if v.inst == Inst::Main && (resp.drag_stopped() || (resp.changed() && !resp.dragged())) {
-        actions.push(("project.view.set".into(), json!({"iconSize": sz})));
+        app.ui.project_panel.icon_size_drag = None;
+        if !escaped {
+            actions.push(("project.view.set".into(), json!({"iconSize": sz})));
+        }
     }
     x = sr.max.x + 6.0;
     // Sort Icons (Icon view)
     if v.mode == ViewMode::Icon {
         let r = Rect::from_min_size(pos2(x, bar.min.y + 5.0), vec2(24.0, 22.0));
-        let resp = ui.interact(r, egui::Id::new((pre, "sortIcons")), Sense::click()).on_hover_text(tl!("Sort Icons"));
+        let resp = ui.interact(r, egui::Id::unique((pre, "sortIcons")), Sense::click()).on_hover_text(tl!("Sort Icons"));
         app.auto.add(&format!("{pre}.sortIcons"), r, "Sort Icons");
         if resp.hovered() {
             ui.painter().rect_filled(r, 3.0, t.hover);
@@ -586,6 +626,10 @@ fn footer(app: &mut FilmcraftApp, ui: &mut egui::Ui, bar: Rect, v: &View, action
         egui::Popup::menu(&resp).show(|ui| sort_icons_menu(app, ui, pre, actions));
     }
     let mut rx = bar.max.x - 6.0;
+    // Clear needs a selection, and Automate to Sequence asks its command (an open sequence and a
+    // selected clip), as the ≡ menu does (#2106)
+    let clear = crate::panels::project_views::clear_params(&app.session.state.project_selection, app.ui.project_panel.selected_bin);
+    let automate = app.session.is_enabled("clip.automateToSequence");
     for (icon, id, tip) in [
         (Icon::Trash, "project.delete", tl!("Clear (Delete)")),
         (Icon::NewItem, "new-item", tl!("New Item")),
@@ -594,22 +638,43 @@ fn footer(app: &mut FilmcraftApp, ui: &mut egui::Ui, bar: Rect, v: &View, action
         (Icon::Automate, "clip.automateToSequence", tl!("Automate to Sequence")),
     ] {
         let r = Rect::from_min_size(pos2(rx - 24.0, bar.min.y + 5.0), vec2(24.0, 22.0));
-        let resp = ui.interact(r, egui::Id::new((pre, "pb", id)), Sense::click()).on_hover_text(tip);
+        let enabled = match id {
+            "project.delete" => clear.is_some(),
+            "clip.automateToSequence" => automate,
+            _ => true,
+        };
+        let resp = ui.interact(r, egui::Id::unique((pre, "pb", id)), Sense::click()).on_hover_text(tip);
         app.auto.add(&format!("{pre}.button.{id}"), r, tip);
-        if resp.hovered() {
+        if resp.hovered() && enabled {
             ui.painter().rect_filled(r, 3.0, t.hover);
         }
-        icons::paint(ui.painter(), r.shrink(5.0), icon, t.icon);
+        icons::paint(ui.painter(), r.shrink(5.0), icon, if enabled { t.icon } else { t.text_faint });
         if id == "new-item" {
+            // a clip dropped here makes a sequence that matches it, as in Premiere (#2855)
+            if let Some(item) = crate::panels::dragged_panel_item(ui)
+                && ui.rect_contains_pointer(r)
+            {
+                ui.painter().rect_stroke(r, 3.0, Stroke::new(1.5, app.tokens.accent), egui::StrokeKind::Inside);
+                if ui.input(|i| i.pointer.any_released()) {
+                    let items: Vec<u64> = crate::panels::dragged_selection(app, item).iter().map(|i| i.0).collect();
+                    actions.push(("file.newSequenceFromClip".into(), json!({"items": items})));
+                    crate::panels::clear_drag(ui);
+                }
+            }
             egui::Popup::menu(&resp).show(|ui| new_item_menu(app, ui, pre, actions));
-        } else if resp.clicked() {
+        } else if resp.clicked() && enabled {
             match id {
                 "find" => actions.push(("edit.find".into(), json!({}))),
                 "file.newBin" => {
                     let parent = (v.bin != app.session.project.root.id).then_some(v.bin.0);
-                    actions.push(("file.newBin".into(), json!({"name": "New Bin", "parent": parent})));
+                    actions.push(("file.newBin".into(), json!({"parent": parent, "panel": pre})));
                 }
-                "project.delete" if app.session.state.project_selection.is_empty() => app.ui.status = tl!("Select items to clear").into(),
+                "project.delete" => {
+                    if let Some(p) = clear.clone() {
+                        app.ui.project_panel.rename = None;
+                        actions.push((id.into(), p));
+                    }
+                }
                 _ => actions.push((id.into(), json!({}))),
             }
         }
@@ -673,6 +738,7 @@ pub fn panel_menu(app: &mut FilmcraftApp, ui: &mut egui::Ui) -> bool {
     let inst = shown_inst(app);
     let v = view_of(app, inst);
     let has_sel = !app.session.state.project_selection.is_empty() || app.ui.project_panel.selected_bin.is_some();
+    let clear = crate::panels::project_views::clear_params(&app.session.state.project_selection, app.ui.project_panel.selected_bin);
     let has_project_path = app.session.path.is_some();
     let sc = |id: &str| app.session.shortcuts.primary(id);
     let (s_close, s_save, s_bin, s_find) = (sc("file.closeProject"), sc("file.save"), sc("file.newBin"), sc("edit.find"));
@@ -700,7 +766,7 @@ pub fn panel_menu(app: &mut FilmcraftApp, ui: &mut egui::Ui) -> bool {
         ui.separator();
         if item(ui, "newBin", tl!("New Bin"), true, s_bin.as_deref()) {
             let parent = (v.bin != app.session.project.root.id).then_some(v.bin.0);
-            actions.push(("file.newBin".into(), json!({"name": "New Bin", "parent": parent})));
+            actions.push(("file.newBin".into(), json!({"parent": parent})));
         }
         if item(ui, "newBinFromSelection", tl!("New Bin From Selection"), !app.session.state.project_selection.is_empty(), Some("Shift+B")) {
             actions.push(("file.newBinFromSelection".into(), json!({})));
@@ -712,11 +778,12 @@ pub fn panel_menu(app: &mut FilmcraftApp, ui: &mut egui::Ui) -> bool {
         if item(ui, "rename", tl!("Rename"), has_sel, None) {
             actions.push(("projectPanel.rename".into(), json!({})));
         }
-        if item(ui, "delete", tl!("Delete"), !app.session.state.project_selection.is_empty(), Some("Backspace")) {
-            actions.push(("project.delete".into(), json!({})));
+        if item(ui, "delete", tl!("Delete"), clear.is_some(), Some("Backspace")) {
+            app.ui.project_panel.rename = None;
+            actions.push(("project.delete".into(), clear.unwrap_or_default()));
         }
         ui.separator();
-        if item(ui, "automateToSequence", tl!("Automate to Sequence…"), !app.session.state.project_selection.is_empty(), None) {
+        if item(ui, "automateToSequence", tl!("Automate to Sequence…"), app.session.is_enabled("clip.automateToSequence"), None) {
             actions.push(("clip.automateToSequence".into(), json!({})));
         }
         if item(ui, "find", tl!("Find…"), true, s_find.as_deref()) {
@@ -937,6 +1004,35 @@ fn start_rename(app: &mut FilmcraftApp, params: &Value) -> Result<Value, String>
     let panel = view_of(app, shown_inst(app)).prefix;
     app.ui.project_panel.rename = Some(Rename { item, bin, text, panel });
     Ok(json!({"item": item, "bin": bin}))
+}
+
+/// New Bin from a menu, a shortcut or the panel's buttons (no `name`): make a "New Bin" in `parent`
+/// (left out: the bin the Project panel shows; null: the project's root) and start renaming it, so
+/// its name can be typed right away (#456). `panel` names the panel instance that edits the name.
+/// Agents pass `name` to `file.newBin` to name the bin directly.
+pub fn new_bin(app: &mut FilmcraftApp, params: &Value) -> Result<Value, String> {
+    let shown = view_of(app, shown_inst(app));
+    let parent = match params.get("parent") {
+        None => (shown.bin != app.session.project.root.id).then_some(shown.bin.0),
+        Some(Value::Null) => None,
+        Some(p) => Some(p.as_u64().ok_or("`parent` must be a bin id")?),
+    };
+    let r = app.session.execute("file.newBin", json!({"name": tl!("New Bin"), "parent": parent})).map_err(|e| e.to_string())?;
+    let bin = r.get("bin").and_then(Value::as_u64).ok_or("the new bin has no id")?;
+    let text = app.session.project.root.find_bin(BinId(bin)).map(|b| b.name.clone()).ok_or("no such bin")?;
+    // a bin made inside a collapsed bin of the list opens it, so the name field is visible
+    if let Some(p) = parent
+        && !app.ui.expanded_bins.contains(&p)
+    {
+        app.ui.expanded_bins.push(p);
+    }
+    let panel = params.get("panel").and_then(Value::as_str).map_or(shown.prefix, str::to_string);
+    // Clicking a bin already clears the item selection so Clear targets the bin (#587). New Bin
+    // must do the same: leftover clips would otherwise steal the trash button and Delete.
+    let _ = app.session.execute("project.select", json!({"items": []}));
+    app.ui.project_panel.selected_bin = Some(bin);
+    app.ui.project_panel.rename = Some(Rename { item: None, bin: Some(bin), text, panel });
+    Ok(r)
 }
 
 /// Commit the inline rename (Enter / focus lost).
