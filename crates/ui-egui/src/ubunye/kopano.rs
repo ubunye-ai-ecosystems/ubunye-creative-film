@@ -1201,7 +1201,9 @@ mod native {
     use std::net::TcpStream;
     use std::time::Duration;
 
-    use super::*;
+    use super::{
+        BINDING, Client, Config, Job, MAX_LINE, NOT_RUNNING, POLL_MS, Said, Serialize, Shared, Value, for_people, job_done, json, lock, now_ms, read_token,
+    };
 
     /// One connection to the service's API.
     pub struct Conn {

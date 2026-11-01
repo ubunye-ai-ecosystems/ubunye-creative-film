@@ -11,6 +11,13 @@ ignore = [
   "RUSTSEC-2026-0049", "RUSTSEC-2026-0098", "RUSTSEC-2026-0099", "RUSTSEC-2026-0104",  # rustls-webpki 0.102 (M2.3)
   "RUSTSEC-2024-0429",  # glib 0.18 unsound (via muda/gtk)
   "RUSTSEC-2024-0436", "RUSTSEC-2024-0370",  # unmaintained: paste, proc-macro-error
+  # Came with the upstream 0.15 merge (2026-11-01), all transitive in upstream's lockfile; drop each
+  # when upstream bumps it or we update Cargo.lock on its own PR (M2.3).
+  "RUSTSEC-2026-0367", "RUSTSEC-2026-0368", "RUSTSEC-2026-0369",  # zip 7.2.0 extract (we never extract untrusted archives)
+  "RUSTSEC-2026-0382",  # rustls-webpki 0.102/0.103 distrusted intermediates
+  "RUSTSEC-2026-0383",  # webpki-root-certs 1.0.9 emSign intermediates
+  "RUSTSEC-2026-0387",  # crypto-bigint 0.5.5 timing (via rsa / rustls-rustcrypto, as 2023-0071)
+  "RUSTSEC-2026-0370", "RUSTSEC-2026-0371", "RUSTSEC-2026-0372",  # unmaintained: zvariant, zbus_names, zvariant_derive (Linux D-Bus via accesskit/rfd)
 ]
 
 [licenses]
@@ -49,3 +56,5 @@ allow-wildcard-paths = true
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# upstream's pinned forks (egui, winit) and the craft libraries, each at a fixed rev in Cargo.toml
+allow-git = ["https://github.com/storytold/egui.git", "https://github.com/storytold/winit.git", "https://github.com/storytold/craft-libs"]

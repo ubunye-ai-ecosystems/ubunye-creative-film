@@ -797,6 +797,37 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
     ctx.request_repaint_after(std::time::Duration::from_secs(1));
 }
 
+/// The sign-in part of the window (the service runs, this computer is not signed in yet).
+fn sign_in(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, state: &State) {
+    let t = app.tokens;
+    match &state.signing_in {
+        Some(si) => {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(crate::i18n::t("Check that the browser shows")).color(t.text));
+                ui.label(RichText::new(&si.code).font(Tokens::semibold(15.0)).color(t.text));
+            });
+            dim(ui, crate::i18n::t("Approve this computer there. This window carries on by itself."), &t);
+            ui.horizontal(|ui| {
+                if button(app, ui, "signInPage", "Open the page again", false).clicked() {
+                    press(app, ctx, "kopano.signInPage", json!({}));
+                }
+                if button(app, ui, "signInCancel", "Cancel", false).clicked() {
+                    press(app, ctx, "kopano.signInCancel", json!({}));
+                }
+            });
+        }
+        None => {
+            if let Some(m) = &state.sign_in_message {
+                line(ui, kopano::for_people(m), CAUTION);
+            }
+            dim(ui, crate::i18n::t("Work on this film together with your team."), &t);
+            if button(app, ui, "signIn", "Sign in with ThabangVision", false).clicked() {
+                press(app, ctx, "kopano.signIn", json!({}));
+            }
+        }
+    }
+}
+
 fn body(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, state: &State) {
     let t = app.tokens;
     match state.me.as_ref().filter(|_| state.running) {
@@ -811,32 +842,7 @@ fn body(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, state: &
         }
         // the service runs, but this computer is not signed in to ThabangVision
         Some(_) => {
-            match &state.signing_in {
-                Some(si) => {
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(crate::i18n::t("Check that the browser shows")).color(t.text));
-                        ui.label(RichText::new(&si.code).font(Tokens::semibold(15.0)).color(t.text));
-                    });
-                    dim(ui, crate::i18n::t("Approve this computer there. This window carries on by itself."), &t);
-                    ui.horizontal(|ui| {
-                        if button(app, ui, "signInPage", "Open the page again", false).clicked() {
-                            press(app, ctx, "kopano.signInPage", json!({}));
-                        }
-                        if button(app, ui, "signInCancel", "Cancel", false).clicked() {
-                            press(app, ctx, "kopano.signInCancel", json!({}));
-                        }
-                    });
-                }
-                None => {
-                    if let Some(m) = &state.sign_in_message {
-                        line(ui, kopano::for_people(m), CAUTION);
-                    }
-                    dim(ui, crate::i18n::t("Work on this film together with your team."), &t);
-                    if button(app, ui, "signIn", "Sign in with ThabangVision", false).clicked() {
-                        press(app, ctx, "kopano.signIn", json!({}));
-                    }
-                }
-            }
+            sign_in(app, ui, ctx, state);
             // nothing else works before the sign-in
             job_line(app, ui, state);
             return;

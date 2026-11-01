@@ -64,8 +64,8 @@ pub fn localize(text: &str) -> &str {
     }
     static RENAMED: OnceLock<Mutex<HashMap<String, &'static str>>> = OnceLock::new();
     let mut map = RENAMED.get_or_init(Default::default).lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(s) = map.get(text) {
-        return *s;
+    if let Some(&s) = map.get(text) {
+        return s;
     }
     if map.len() >= MAX_RENAMED {
         return text;
