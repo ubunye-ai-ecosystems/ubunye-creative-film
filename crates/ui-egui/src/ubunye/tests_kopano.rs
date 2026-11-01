@@ -765,7 +765,12 @@ fn the_owner_sees_people_by_name_invites_by_email_and_takes_someone_off() {
     plain(&s);
     assert!(!s.contains('@') && !s.contains("u-m1"), "no emails or user ids: {s}");
     let tag = short(PID).to_string();
-    d.type_into(&format!("collab.inviteEmail.{tag}"), "bob@example.com");
+    // a click on the field can land while the window still moves (a busy test machine): type again
+    let t0 = Instant::now();
+    while d.app().kopano.invite_email != "bob@example.com" {
+        assert!(t0.elapsed() < T, "typing into collab.inviteEmail.{tag} did nothing");
+        d.type_into(&format!("collab.inviteEmail.{tag}"), "bob@example.com");
+    }
     d.click_until(&format!("collab.invite.{tag}"), || fake.requests("invite").len() == 1);
     let inv = &fake.requests("invite")[0];
     assert_eq!((inv["project"].as_str(), inv["email"].as_str()), (Some(PID), Some("bob@example.com")));
