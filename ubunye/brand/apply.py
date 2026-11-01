@@ -272,6 +272,34 @@ WORKFLOWS = [".github/workflows/release.yml", ".github/workflows/packaging-lint.
 NL = "\n"
 PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
     (
+        # upstream's suite folder (Program Files and per-user Programs) is the vendor's, as in Ubunye Light
+        "packaging/windows/filmcraft.wxs",
+        [('<Directory Id="CraftSuiteFolder" Name="ArtCraft">', f'<Directory Id="CraftSuiteFolder" Name="{VENDOR}">')],
+    ),
+    (
+        "packaging/windows/install-policy.wxi",
+        [
+            (f"\\ArtCraft\\{NAME}\\", f"\\{VENDOR}\\{NAME}\\"),
+            ("New copies use the ArtCraft folder under Programs.", f"New copies use the {VENDOR} folder under Programs."),
+        ],
+    ),
+    (
+        "packaging/windows/check-install-policy.ps1",
+        [
+            ("$dirs['CraftSuiteFolder'][1] -ne 'ArtCraft'", f"($dirs['CraftSuiteFolder'][1] -split '\\|')[-1] -ne '{VENDOR}'"),
+            ("under the per-user ArtCraft suite root.", f"under the per-user {VENDOR} suite root."),
+            ("'PASS ArtCraft Launcher:", f"'PASS {VENDOR} Launcher:"),
+            ("$directories['CraftSuiteFolder'][1] -ne 'ArtCraft') { throw 'Expected the app under the ArtCraft suite folder.' }",
+             f"($directories['CraftSuiteFolder'][1] -split '\\|')[-1] -ne '{VENDOR}') {{ throw 'Expected the app under the {VENDOR} suite folder.' }}"),
+            ('"ArtCraft\\$($policy.name)"', f'"{VENDOR}\\$($policy.name)"'),
+            ('"Programs\\ArtCraft\\$($policy.name)"', f'"Programs\\{VENDOR}\\$($policy.name)"'),
+        ],
+    ),
+    (
+        "packaging/windows/INSTALLATION.md",
+        [("`Programs\\ArtCraft\\<App>`", f"`Programs\\{VENDOR}\\<App>`")],
+    ),
+    (
         # upstream's app-store manifest names the icon by upstream's app id
         "omastore.toml",
         [(f'icon = "assets/app-icon/hicolor/256x256/apps/{UPSTREAM_ID}.png"', f'icon = "assets/app-icon/hicolor/256x256/apps/{APP_ID}.png"')],
@@ -995,11 +1023,6 @@ ALLOWED = re.compile(
 SKIP_PREFIX = ("docs/", "ubunye/", "contributors/", "LICENSE", "NOTICE", "ATTRIBUTION.md", "UPSTREAM", ".github/workflows/release.yml", ".github/workflows/ubunye-",
                # release signing scripts: left as upstream wrote them until the owner approves
                "packaging/windows/sign.ps1", "packaging/macos/import-cert.sh",
-               # upstream's dual-scope (ArtCraft suite) installer policy: our MSI stays per-machine
-               # (ThabangVision collaboration installs under Program Files and HKLM), so these
-               # upstream checks and notes are kept as written and unused by package.ps1
-               "packaging/windows/check-install-policy.ps1", "packaging/windows/test-install-policy.ps1",
-               "packaging/windows/INSTALLATION.md", "packaging/windows/install-policy.",
                # upstream-only CI (Windows ARM64 installer smoke test of upstream's MSI layout)
                ".github/workflows/windows-arm64.yml")
 TEXT_EXT = {".rs", ".toml", ".md", ".html", ".js", ".mjs", ".json", ".yml", ".yaml", ".sh", ".ps1", ".py", ".xml", ".in", ".desktop", ".wxs", ".tsv", ".plist", ".attribution", ".txt", ".svg", ""}
