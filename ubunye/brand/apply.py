@@ -814,6 +814,8 @@ def icons(run: Run) -> None:
         run.put_text(s.with_name(s.name + ".attribution"), sidecar(s, title, "Rendered by ubunye/brand/make_icons.py; the source apply.py copies."))
     icon = BRAND / "assets" / "icon.svg"
     run.put_text(icon.with_name("icon.svg.attribution"), sidecar(icon, "master artwork (512 tile)", "Master file; every other icon is rendered from it."))
+    small = BRAND / "assets" / "icon-small.svg"
+    run.put_text(small.with_name("icon-small.svg.attribution"), sidecar(small, "small-size master artwork", "Master for the small icon sizes."))
 
 
 # ------------------------------------------------------------------------- 7. README, notices
@@ -907,7 +909,8 @@ docs/brand/LICENSE-brand.txt requires). The {NAME} icon is {ICON_LICENCE}.
 
 def attribution_section() -> str:
     rows = [
-        f"| `ubunye/brand/assets/icon.svg` | {VENDOR} | Original work: {NAME} app icon, master artwork | {ICON_LICENCE} (`assets/app-icon/LICENSE.txt`) |"
+        f"| `ubunye/brand/assets/icon.svg` | {VENDOR} | Original work: {NAME} app icon, master artwork | {ICON_LICENCE} (`assets/app-icon/LICENSE.txt`) |",
+        f"| `ubunye/brand/assets/icon-small.svg` | {VENDOR} | Original work: {NAME} app icon, small-size master artwork | {ICON_LICENCE} (`assets/app-icon/LICENSE.txt`) |"
     ]
     for src, dst, title in icon_map():
         rows.append(f"| `{dst}` | {VENDOR} | Original work: {NAME} app icon, {title} | {ICON_LICENCE} (`assets/app-icon/LICENSE.txt`) |")
