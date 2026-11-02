@@ -134,10 +134,7 @@ if has deb || has rpm; then
   fi
   # rpm only: runs after the whole transaction, so after the scripts of a package this one obsoletes.
   if [ -n "${UBUNYE_LINUX_RPM_POSTTRANS:-}" ]; then
-    printf 'rpm:
-  scripts:
-    posttrans: %s
-' "$UBUNYE_LINUX_RPM_POSTTRANS" >>"$WORK/nfpm.yaml"
+    printf 'rpm:\n  scripts:\n    posttrans: %s\n' "$UBUNYE_LINUX_RPM_POSTTRANS" >>"$WORK/nfpm.yaml"
   fi
   for fmt in deb rpm; do
     if has "$fmt"; then (cd "$ROOT" && nfpm package -f "$WORK/nfpm.yaml" -p "$fmt" -t "$DIST/$BASENAME.$fmt"); fi

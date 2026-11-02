@@ -36,7 +36,10 @@ installed ubunye-creative-film || fail "ubunye-creative-film is not installed"
 if installed filmcraft; then fail "filmcraft is still installed next to ubunye-creative-film"; fi
 /usr/bin/filmcraft-cli --version | grep -F "(Ubunye Film)" || fail "filmcraft-cli does not run"
 test -x /usr/bin/filmcraft || fail "/usr/bin/filmcraft is missing"
-k="$(readlink -f /usr/bin/kopanod)" || fail "/usr/bin/kopanod is missing"
+# readlink -f prints a missing path back and succeeds, so test the link itself first
+test -e /usr/bin/kopanod || fail "/usr/bin/kopanod is missing: collaboration would not start"
+test -e /usr/lib/systemd/user/thabangvision-collab.service || fail "the start-at-sign-in unit is missing"
+k="$(readlink -f /usr/bin/kopanod)"
 test -x "$k" || fail "/usr/bin/kopanod points at $k, which is not there"
 echo "kopanod -> $k"
 
@@ -44,4 +47,5 @@ step "remove the new package"
 if [ $KIND = deb ]; then apt-get remove -y -qq ubunye-creative-film >/dev/null; else dnf remove -y -q ubunye-creative-film >/dev/null; fi
 if installed ubunye-creative-film; then fail "ubunye-creative-film is still installed"; fi
 test ! -e /usr/bin/filmcraft || fail "/usr/bin/filmcraft is left behind"
+test ! -e /usr/bin/kopanod || fail "/usr/bin/kopanod is left behind"
 echo PASS
