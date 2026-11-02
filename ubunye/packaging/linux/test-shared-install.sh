@@ -22,6 +22,12 @@ PORT=47100
 fail() { echo "FAIL: $*" >&2; exit 1; }
 step() { echo; echo "== $*"; }
 name_of() { if [ $KIND = deb ]; then dpkg-deb -f "$1" Package; else rpm -qp --qf '%{NAME}' "$1"; fi; }
+# where the package puts its kopanod (/usr/lib/<dir>/kopanod); the dir need not be the package
+# name (Film's package is ubunye-creative-film, its files stay in /usr/lib/filmcraft)
+kopanod_of() {
+  if [ $KIND = deb ]; then dpkg-deb -c "$1" | awk '{print $NF}' | sed 's#^\./#/#'; else rpm -qlp "$1"; fi |
+    grep -E '^/usr/lib/[^/]+/kopanod$' | head -1
+}
 install_pkg() { if [ $KIND = deb ]; then apt-get install -y -qq "$1" >/dev/null; else dnf install -y -q "$1" >/dev/null; fi; }
 remove_pkg() { if [ $KIND = deb ]; then apt-get remove -y -qq "$1" >/dev/null; else dnf remove -y -q "$1" >/dev/null; fi; }
 as_user() { if [ "$U" = root ]; then "$@"; else sudo -u "$U" HOME="$UHOME" XDG_RUNTIME_DIR="/run/user/$(id -u "$U")" "$@"; fi; }
@@ -46,10 +52,10 @@ start_service() {
   wait_answers || { cat /tmp/kopanod-test.log 2>/dev/null; as_user journalctl --user -u thabangvision-collab -n 30 2>/dev/null || true; fail "kopanod does not answer"; }
 }
 running() { pgrep -f '^/usr/(bin|lib/[a-z-]+)/kopanod( |$)' >/dev/null; }
-check_shared() { # <package expected to provide it>
+check_shared() { # <the kopanod path of the package expected to provide it>
   [ -L /usr/bin/kopanod ] || fail "/usr/bin/kopanod is not a link"
   t="$(readlink -f /usr/bin/kopanod)"
-  [ "$t" = "/usr/lib/$1/kopanod" ] || fail "/usr/bin/kopanod -> $t, expected /usr/lib/$1/kopanod"
+  [ "$t" = "$1" ] || fail "/usr/bin/kopanod -> $t, expected $1"
   for u in /usr/lib/systemd/user/thabangvision-collab.service /usr/lib/systemd/user/default.target.wants/thabangvision-collab.service; do
     [ -e "$u" ] || fail "$u missing"
     grep -q "^ExecStart=/usr/bin/kopanod run --standby" "$u" || fail "$u is not the kopanod unit"
@@ -69,7 +75,7 @@ check_gone() {
 NA="$(name_of "$A")"
 step "install $NA"
 install_pkg "$A"
-check_shared "$NA"
+check_shared "$(kopanod_of "$A")"
 start_service
 echo "ok: the service answers"
 if [ -z "$B" ]; then
@@ -87,7 +93,7 @@ echo "ok: both installed; /usr/bin/kopanod -> $(readlink -f /usr/bin/kopanod) (t
 answers || fail "installing $NB stopped the service"
 step "remove $NA: $NB keeps collaboration"
 remove_pkg "$NA"
-check_shared "$NB"
+check_shared "$(kopanod_of "$B")"
 answers || fail "removing $NA stopped the service $NB uses"
 running || fail "kopanod is not running after removing $NA"
 echo "ok: the service still answers"
@@ -104,7 +110,7 @@ step "install $NB then $NA (the other order), remove $NB, then $NA"
 install_pkg "$B"
 install_pkg "$A"
 remove_pkg "$NB"
-check_shared "$NA"
+check_shared "$(kopanod_of "$A")"
 remove_pkg "$NA"
 check_gone
 echo; echo "PASS ($KIND, $NA + $NB)"

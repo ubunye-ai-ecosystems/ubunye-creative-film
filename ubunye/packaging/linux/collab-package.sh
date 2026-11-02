@@ -31,10 +31,15 @@ fill() { sed -e "s|@APP@|$APP|g" -e "s|@PRIORITY@|$PRIORITY|g" -e "s|@KOPANOD_VE
 # postinst: the alternatives, then the app's own (desktop and icon caches; it ends with exit 0)
 { fill "$HERE/postinst.sh.in"; tail -n +2 "$ROOT/packaging/linux/postinst.sh"; } >"$OUT/scripts/postinst.sh"
 fill "$HERE/prerm.sh.in" >"$OUT/scripts/prerm.sh"
+# rpm runs a replaced package's scripts AFTER the new one's %post. The published filmcraft 0.7.0
+# removes /usr/lib/filmcraft/kopanod (the path this package also uses) from the alternatives in its
+# %preun, which takes /usr/bin/kopanod away, so rpm registers again once the transaction is over.
+fill "$HERE/postinst.sh.in" >"$OUT/scripts/posttrans.sh"
 chmod 755 "$OUT/scripts/"*.sh
 sh -n "$OUT/scripts/postinst.sh"
 sh -n "$OUT/scripts/prerm.sh"
+sh -n "$OUT/scripts/posttrans.sh"
 
 UBUNYE_EXTRA_BIN_DIR="$OUT/bin" UBUNYE_LINUX_PKGLIB_DIR="$OUT/pkglib" \
-  UBUNYE_LINUX_POSTINSTALL="$OUT/scripts/postinst.sh" UBUNYE_LINUX_PREREMOVE="$OUT/scripts/prerm.sh" \
+  UBUNYE_LINUX_POSTINSTALL="$OUT/scripts/postinst.sh" UBUNYE_LINUX_PREREMOVE="$OUT/scripts/prerm.sh" UBUNYE_LINUX_RPM_POSTTRANS="$OUT/scripts/posttrans.sh" \
   "$ROOT/packaging/linux/package.sh" "$@"

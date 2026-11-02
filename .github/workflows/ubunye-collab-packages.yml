@@ -247,6 +247,23 @@ jobs:
       - name: Install and remove the .rpm for real (Fedora)
         run: |
           docker run --rm -v "$PWD:/w" -w /w fedora:41 sh -c 'dnf install -y -q procps-ng >/dev/null && ./ubunye/packaging/linux/test-shared-install.sh dist/release/*.rpm'
+      # The package was named filmcraft up to 0.7.0 (as upstream's): the published 0.7.0 must
+      # upgrade to this one in place (ubunye/packaging/linux/test-upgrade.sh).
+      - name: Upgrade from the published 0.7.0 (filmcraft) package
+        run: |
+          set -euo pipefail
+          base=https://downloads.thabangvision.com/film/0.7.0/ubunye-creative-film-0.7.0-linux-x86_64
+          curl -fsSL -o "$RUNNER_TEMP/old.deb" "$base.deb"
+          curl -fsSL -o "$RUNNER_TEMP/old.rpm" "$base.rpm"
+          (cd "$RUNNER_TEMP" && sha256sum -c - <<'SUMS'
+          abe42a8aab8b2e88e1d3140c9b9e6caaab51ff5aa06a5010b6a481ada70df9e2  old.deb
+          3ce09fb0e2351faa6db100607c9efd01553037aea28e8f7ad2b051f8d4e48b68  old.rpm
+          SUMS
+          )
+          cp "$RUNNER_TEMP/old.deb" "$RUNNER_TEMP/old.rpm" .
+          sudo ./ubunye/packaging/linux/test-upgrade.sh old.deb dist/release/*.deb
+          docker run --rm -v "$PWD:/w" -w /w fedora:41 ./ubunye/packaging/linux/test-upgrade.sh old.rpm dist/release/*.rpm
+          rm -f old.deb old.rpm
       - uses: actions/upload-artifact@v4
         with:
           name: ubunye-film-collab-linux-x86_64
