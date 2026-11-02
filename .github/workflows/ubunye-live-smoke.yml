@@ -1,0 +1,57 @@
+# Ubunye-owned. Smoke test of the LIVE app: downloads what downloads.thabangvision.com/<app>/latest.json
+# serves right now, installs it like a user (apt, dnf, msiexec, the DMG's .app), checks its identity
+# (name, version, no upstream names, product and update links point at thabangvision.com), then runs
+# the installed app on real samples and checks the outputs with an independent decoder. Outputs are
+# uploaded. The steps live in ubunye/scripts/live_smoke.py. Free GitHub-hosted runners only.
+name: ubunye-live-smoke
+
+on:
+  push:
+    branches: [ubunye/live-smoke]
+  workflow_dispatch: {}
+  workflow_run:
+    workflows: [ubunye-release]
+    types: [completed]
+  schedule:
+    - cron: "23 6 * * 1"   # weekly, Monday 06:23 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ubunye-live-smoke
+  cancel-in-progress: false
+
+env:
+  APP: film
+
+jobs:
+  smoke:
+    # after a release only when it published
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    name: live ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: ubunye/scripts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Pillow and ffmpeg (decode the outputs)
+        run: python -m pip install --quiet "pillow==11.3.0" "imageio-ffmpeg==0.6.0"
+      - name: Live smoke test
+        run: python ubunye/scripts/live_smoke.py --app ${{ env.APP }} --out "${{ runner.temp }}/live-smoke-out"
+      - name: Outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-smoke-${{ env.APP }}-${{ matrix.os }}
+          path: ${{ runner.temp }}/live-smoke-out
+          if-no-files-found: warn
+          retention-days: 30
