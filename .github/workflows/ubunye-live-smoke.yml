@@ -6,8 +6,6 @@
 name: ubunye-live-smoke
 
 on:
-  push:
-    branches: [ubunye/live-smoke]
   workflow_dispatch: {}
   workflow_run:
     workflows: [ubunye-release]
