@@ -465,15 +465,21 @@ def window(cfg: dict, exe: Path, cli: Path, imgs: dict[str, Path], out: Path, en
     log = open(out / "app-stderr.log", "w")
     proc = subprocess.Popen([str(exe), "--control", str(port), "--data-dir", str(data), "--empty", "--no-recover"], env=e, stdout=log, stderr=subprocess.STDOUT)
     try:
-        s = wait_for_port(proc, port)
-        f = s.makefile("rw", encoding="utf-8", newline="\n")
-
         def call(method: str, params: dict | None = None, name: str | None = None) -> dict:
-            f.write(json.dumps({"id": 1, "token": token, "method": method, "params": params or {}}) + "\n")
-            f.flush()
-            reply = json.loads(f.readline())
-            check(reply.get("ok") is True, name or f"control {method}", json.dumps(reply)[:300])
-            return reply.get("result")
+            # the port opens before the first frame: until then the app asks to be asked again
+            deadline = time.time() + 180
+            while True:
+                s = wait_for_port(proc, port)
+                f = s.makefile("rw", encoding="utf-8", newline="\n")
+                f.write(json.dumps({"id": 1, "token": token, "method": method, "params": params or {}}) + "\n")
+                f.flush()
+                reply = json.loads(f.readline())
+                s.close()
+                if "still starting" in str(reply.get("error")) and time.time() < deadline:
+                    time.sleep(2)
+                    continue
+                check(reply.get("ok") is True, name or f"control {method}", json.dumps(reply)[:300])
+                return reply.get("result")
 
         call("ui.inspect", None, "the app window answers ui.inspect")
         bridge = ["--bridge", f"127.0.0.1:{port}"]
