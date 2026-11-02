@@ -18,7 +18,7 @@
 # target), CROSS_COMPILE (binutils prefix, for strip) and optionally EMULATOR (qemu-riscv64) to
 # smoke-test the CLI.
 # Modified by Ubunye AI Ecosystems, 2026 (UBUNYE_EXTRA_BIN_DIR, UBUNYE_LINUX_PKGLIB_DIR,
-# UBUNYE_LINUX_POSTINSTALL and UBUNYE_LINUX_PREREMOVE hooks).
+# UBUNYE_LINUX_POSTINSTALL, UBUNYE_LINUX_PREREMOVE, UBUNYE_LINUX_RPM_POSTTRANS hooks).
 set -euo pipefail
 # shellcheck source=../env.sh
 . "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
@@ -131,6 +131,10 @@ if has deb || has rpm; then
   fi
   if [ -n "${UBUNYE_LINUX_PREREMOVE:-}" ]; then
     add_line scripts "  preremove: $UBUNYE_LINUX_PREREMOVE"
+  fi
+  # rpm only: runs after the whole transaction, so after the scripts of a package this one obsoletes.
+  if [ -n "${UBUNYE_LINUX_RPM_POSTTRANS:-}" ]; then
+    printf 'rpm:\n  scripts:\n    posttrans: %s\n' "$UBUNYE_LINUX_RPM_POSTTRANS" >>"$WORK/nfpm.yaml"
   fi
   for fmt in deb rpm; do
     if has "$fmt"; then (cd "$ROOT" && nfpm package -f "$WORK/nfpm.yaml" -p "$fmt" -t "$DIST/$BASENAME.$fmt"); fi

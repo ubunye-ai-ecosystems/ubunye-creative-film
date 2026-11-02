@@ -139,3 +139,10 @@ packaging/windows/filmcraft.wxs
 packaging/windows/install-policy.json
 packaging/windows/install-policy.wxi
 packaging/windows/package.ps1
+# Removed in Ubunye (upstream-only CI and bots, owner rule 2026-11-01); an upstream change to one
+# of these comes back as a modify/delete conflict: keep it deleted.
+.github/dependabot.yml
+.github/workflows/ci.yml
+.github/workflows/nix.yml
+.github/workflows/sonarcloud.yml
+.github/workflows/windows-arm64.yml

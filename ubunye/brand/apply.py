@@ -272,6 +272,19 @@ WORKFLOWS = [".github/workflows/release.yml", ".github/workflows/packaging-lint.
 NL = "\n"
 PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
     (
+        # Linux package name: ours, so upstream's `filmcraft` package never upgrades over Ubunye Film
+        # (or the other way). Up to 0.7.0 ours was named `filmcraft` too: the new package replaces
+        # (rpm: obsoletes), provides and, on Debian, conflicts with it, so those installs upgrade.
+        "packaging/linux/nfpm.yaml",
+        [
+            ("name: filmcraft" + NL + "arch: ${NFPM_ARCH}" + NL,
+             "name: ubunye-creative-film" + NL + "arch: ${NFPM_ARCH}" + NL
+             + "provides:" + NL + "  - filmcraft" + NL + "replaces:" + NL + "  - filmcraft" + NL),
+            ("overrides:" + NL + "  deb:" + NL + "    depends:" + NL,
+             "overrides:" + NL + "  deb:" + NL + "    conflicts:" + NL + "      - filmcraft" + NL + "    depends:" + NL),
+        ],
+    ),
+    (
         # the MSI's upgrade identity is ours (identities.toml); check-install-policy.ps1 compares it
         "packaging/windows/install-policy.json",
         [('"upgradeCode": "31E6FB14-9DBC-41DD-B24B-26B71FB31B62"', f'"upgradeCode": "{UPGRADE_CODE}"')],
@@ -953,8 +966,10 @@ def apply(run: Run) -> None:
     # 2. text rules
     for p in packaging_files():
         run.update(p, packaging_text)
+    # upstream's CI workflows are removed in Ubunye (ubunye/patched-paths.txt); rebrand any that come back
     for w in WORKFLOWS:
-        run.update(ROOT / w, literal(APP_ID_RULES))
+        if (ROOT / w).exists():
+            run.update(ROOT / w, literal(APP_ID_RULES))
     # 3. snippet patches (strict)
     for rel, pairs in PATCHES:
         path = ROOT / rel

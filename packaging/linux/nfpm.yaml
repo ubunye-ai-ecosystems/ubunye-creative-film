@@ -3,8 +3,12 @@
 # exports VERSION and NFPM_ARCH.
 #
 #   nfpm package -f packaging/linux/nfpm.yaml -p deb -t dist/release/
-name: filmcraft
+name: ubunye-creative-film
 arch: ${NFPM_ARCH}
+provides:
+  - filmcraft
+replaces:
+  - filmcraft
 platform: linux
 version: ${VERSION}
 # semver: 0.2.0-rc.1 becomes 0.2.0~rc.1 in deb/rpm, so pre-releases sort before the release.
@@ -28,6 +32,8 @@ description: |-
 # rather than ELF NEEDED entries.
 overrides:
   deb:
+    conflicts:
+      - filmcraft
     depends:
       - libc6 (>= 2.35)
       - libgcc-s1
