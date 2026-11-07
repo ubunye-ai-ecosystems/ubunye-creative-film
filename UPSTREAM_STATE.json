@@ -7,12 +7,12 @@
     "branch": "main",
     "license": "MIT OR Apache-2.0"
   },
-  "last_checked_at": "2026-11-01T12:00:00Z",
+  "last_checked_at": "2026-11-02T12:00:00Z",
   "last_integrated": {
-    "sha": "9c6d66114c71179f66d21933b6bf6b88311adf46",
-    "date": "2026-10-31T23:42:59-04:00",
-    "upstream_version": "0.15.0",
-    "upstream_tag": "v0.15.0 (+826 commits on main)",
+    "sha": "8c171a0ab80f2843b3e0914f172ef6f486089d94",
+    "date": "2026-11-01T16:10:08-05:00",
+    "upstream_version": "0.16.0",
+    "upstream_tag": null,
     "method": "merge",
     "merged_pr": null,
     "merged_by": null,
@@ -36,6 +36,16 @@
       "ci": "pending",
       "recorded_at": "2026-11-01T12:00:00Z",
       "branch": "sync/upstream-v0.15"
+    },
+    {
+      "sha": "8c171a0ab80f2843b3e0914f172ef6f486089d94",
+      "outcome": "merge",
+      "commits": 30,
+      "conflicts": 3,
+      "conflict_hunks": 55,
+      "ci": "pending",
+      "recorded_at": "2026-11-02T12:00:00Z",
+      "note": "branch sync/upstream-2026-11-02; conflicts were workspace version lines (Cargo.toml, Cargo.lock) and README; kept ours; bumped 0.7.0 to 0.7.1"
     }
   ]
 }
