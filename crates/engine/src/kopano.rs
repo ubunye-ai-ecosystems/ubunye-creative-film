@@ -443,6 +443,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             enabled: always,
             run: id_block,
             journal: false,
+            named: crate::commands::NamedKeys::NONE,
         },
         CommandSpec {
             id: "kopano.items",
@@ -453,6 +454,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             enabled: always,
             run: items,
             journal: false,
+            named: crate::commands::NamedKeys::NONE,
         },
         CommandSpec {
             id: "kopano.apply",
@@ -463,6 +465,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             enabled: always,
             run: apply,
             journal: true,
+            named: crate::commands::NamedKeys::NONE,
         },
     ]
 }
