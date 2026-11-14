@@ -608,7 +608,7 @@ PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
     ),
     (
         "apps/filmcraft-web/src/api.rs",
-        [('js_sys::Error::new("FilmCraft is not running yet")', f'js_sys::Error::new("{NAME} is not running yet")')],
+        [('"error": "FilmCraft is not running yet"', f'"error": "{NAME} is not running yet"')],
     ),
     (
         "apps/filmcraft/build.rs",
@@ -1022,6 +1022,7 @@ ALLOWED = re.compile(
             r"ArtCraft Team",
             r"github\.com/storytold/craft-fonts\S*",
             r"storytold/craft-fonts",
+            r"storytold/craft-libs\S*",
             r"github\.com/storytold/craftrules\S*",
             r"github\.com/storytold/filmcraft/(?:issues|pull)/\d+",
             r"storytold/[a-z]+#\d+",
