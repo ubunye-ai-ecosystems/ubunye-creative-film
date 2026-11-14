@@ -7,12 +7,12 @@
     "branch": "main",
     "license": "MIT OR Apache-2.0"
   },
-  "last_checked_at": "2026-11-07T12:00:00Z",
+  "last_checked_at": "2026-11-14T00:00:00Z",
   "last_integrated": {
-    "sha": "4d571c2a666cace681209a1f617f68cd9cefefed",
-    "date": "2026-11-07T16:50:07+01:00",
+    "sha": "7ac54e9727474e9a6ab05ee9c213ae81a01dfe24",
+    "date": "2026-11-14T21:51:08+01:00",
     "upstream_version": "0.17.0",
-    "upstream_tag": null,
+    "upstream_tag": "v0.17.0 (+ commits on main)",
     "method": "merge",
     "merged_pr": null,
     "merged_by": null,
@@ -55,6 +55,16 @@
       "ci": "pending",
       "recorded_at": "2026-11-07T12:00:00Z",
       "note": "branch sync/upstream-2026-11-07 (includes the unmerged sync/upstream-2026-11-02 work; merged with explicit base 8c171a0 because two merge bases exist); conflicts: i18n tsv (took upstream, apply.py re-applied), project_views.rs (kept Ubunye coming badge), api.rs, workflows, version lines; upstream release.yml/house-rules.yml dropped; apply.py rule for api.rs updated and storytold/craft-libs allowed; bumped 0.7.1 to 0.7.2"
+    },
+    {
+      "sha": "7ac54e9727474e9a6ab05ee9c213ae81a01dfe24",
+      "outcome": "merge",
+      "commits": 2057,
+      "conflicts": 24,
+      "ci": "pending",
+      "recorded_at": "2026-11-14T00:00:00Z",
+      "note": "branch sync/upstream-2026-11-14 (includes the superseded sync/upstream-2026-11-07); upstream CI workflows dropped, upstream flatpak updater test removed; brand rules updated; updater still ours; Ubunye 0.7.2",
+      "merged_pr": null
     }
   ]
 }
