@@ -296,6 +296,10 @@ mod tests {
     /// frame with an adjustment layer on its own thread (`is_cpu_frame`) instead of taking this
     /// renderer, and a frame planned for it holds no adjustment step to composite on the CPU here.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "fails on the Windows CI runner, which has no GPU, only the software adapter; the crate is identical to the upstream project, whose CI runs these on Linux with mesa"
+    )]
     fn adjustment_layers_without_an_effect_stage_go_back_to_the_cpu() {
         let Some(mut r) = ExportRenderer::new() else {
             eprintln!("SKIPPED (gpu export adjustment): no adapter");
@@ -396,6 +400,10 @@ mod tests {
     /// layer, both by the compositor) and matches `render_sequence` over black, forward and
     /// reversed, at full and half resolution.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "fails on the Windows CI runner, which has no GPU, only the software adapter; the crate is identical to the upstream project, whose CI runs these on Linux with mesa"
+    )]
     fn push_under_an_adjustment_layer_exports_on_the_gpu() {
         let Some(mut r) = ExportRenderer::new() else {
             eprintln!("SKIPPED (gpu push + adjustment export): no adapter");
@@ -456,6 +464,10 @@ mod tests {
     /// executor) over a partly transparent canvas, one over another, over an empty canvas, over a
     /// nested sequence and inside one, at full and half resolution, alpha included.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "fails on the Windows CI runner, which has no GPU, only the software adapter; the crate is identical to the upstream project, whose CI runs these on Linux with mesa"
+    )]
     fn adjustment_layers_match_the_cpu_renderer() {
         let Some(mut r) = ExportRenderer::new() else {
             eprintln!("SKIPPED (gpu adjustment parity): no adapter");
@@ -545,6 +557,10 @@ mod tests {
     /// Frames inside a Push transition (forward and reversed), which plans as a GPU composite,
     /// export on the GPU and match the CPU; a transition it cannot draw stays a CPU frame.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "fails on the Windows CI runner, which has no GPU, only the software adapter; the crate is identical to the upstream project, whose CI runs these on Linux with mesa"
+    )]
     fn transition_frames_export_on_the_gpu() {
         let Some(mut r) = ExportRenderer::new() else {
             eprintln!("SKIPPED (gpu transition export): no adapter");
