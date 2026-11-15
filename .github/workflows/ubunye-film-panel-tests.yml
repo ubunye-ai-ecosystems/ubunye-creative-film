@@ -8,7 +8,7 @@ name: ubunye-film-panel-tests
 on:
   workflow_dispatch: {}
   push:
-    branches: [feature/kopano-panel]
+    branches: [feature/kopano-panel, "sync/**"]
     paths:
       - crates/**
       - apps/filmcraft/**

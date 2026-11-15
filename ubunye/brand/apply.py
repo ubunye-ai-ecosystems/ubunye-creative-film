@@ -355,6 +355,13 @@ PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
         [("[community chat](https://discord.gg/artcraft)", f"[issues]({ISSUES_URL})")],
     ),
     (
+        "crates/ui-egui/src/updates_ui.rs",
+        [
+            # a test URL for the update prompt; ours must never name upstream's releases
+            ('let url = "https://github.com/storytold/filmcraft/releases/tag/v99.0.0";', 'let url = "https://www.thabangvision.com/tools/film/releases/tag/v99.0.0";'),
+        ],
+    ),
+    (
         "apps/filmcraft/src/native_menu.rs",
         [('"FilmCraft Edit menu is unavailable"', f'"{NAME} Edit menu is unavailable"')],
     ),
@@ -608,7 +615,7 @@ PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
     ),
     (
         "apps/filmcraft-web/src/api.rs",
-        [('js_sys::Error::new("FilmCraft is not running yet")', f'js_sys::Error::new("{NAME} is not running yet")')],
+        [('"error": "FilmCraft is not running yet"', f'"error": "{NAME} is not running yet"')],
     ),
     (
         "apps/filmcraft/build.rs",
@@ -633,10 +640,8 @@ PATCHES: list[tuple[str, list[tuple[str, str]]]] = [
             ('eframe::run_native("FilmCraft", options,', "eframe::run_native(filmcraft_ui_egui::brand::NAME, options,"),
             (f"`packaging/linux/{UPSTREAM_ID}.desktop`", f"`packaging/linux/{APP_ID}.desktop`"),
             ('log::info!("FilmCraft {} ({} {})", env!', 'log::info!("{} {} ({} {})", filmcraft_ui_egui::brand::NAME, env!'),
-            (
-                'let msg = format!("FilmCraft could not start its window: {e}\\n\\nUpdating the graphics driver usually fixes this.");',
-                'let msg = format!("{} could not start its window: {e}\\n\\nUpdating the graphics driver usually fixes this.", filmcraft_ui_egui::brand::NAME);',
-            ),
+            ('log::error!("can\'t start FilmCraft again in graphics mode {}: {e}", graphics.mode().name())', 'log::error!("can\'t start {} again in graphics mode {}: {e}", filmcraft_ui_egui::brand::NAME, graphics.mode().name())'),
+            ('log::warn!("starting FilmCraft again in graphics mode {}", mode.name());', 'log::warn!("starting {} again in graphics mode {}", filmcraft_ui_egui::brand::NAME, mode.name());'),
             ('tell(&format!("filmcraft {}\\n", env!("CARGO_PKG_VERSION")), false);', 'tell(&format!("{} (filmcraft) {}\\n", filmcraft_ui_egui::brand::NAME, env!("CARGO_PKG_VERSION")), false);'),
             ("            tell(args::USAGE, false);", '            tell(&format!("{}\\n\\n{}", filmcraft_ui_egui::brand::NAME, args::USAGE), false);'),
         ],
@@ -692,7 +697,7 @@ LOCALE_RENAMES = {
     "Join us on Discord": "Join the Ubunye Community",
     "A clean-room, pure-Rust non-linear video editor. Part of the ArtCraft family.": "A clean-room, pure-Rust non-linear video editor.",
 }
-LOCALE_COMMENTS = [("(FilmCraft, ArtCraft, ", "(FilmCraft, "), ("（FilmCraft、ArtCraft、", "（FilmCraft、")]
+LOCALE_COMMENTS = [("(FilmCraft, ArtCraft,\n", "(FilmCraft,\n"), ("(FilmCraft, ArtCraft, ", "(FilmCraft, "), ("（FilmCraft、ArtCraft、", "（FilmCraft、")]
 
 
 def load_locale_rows() -> dict[str, list[tuple[str, str]]]:
@@ -1022,6 +1027,7 @@ ALLOWED = re.compile(
             r"ArtCraft Team",
             r"github\.com/storytold/craft-fonts\S*",
             r"storytold/craft-fonts",
+            r"storytold/craft-libs\S*",
             r"github\.com/storytold/craftrules\S*",
             r"github\.com/storytold/filmcraft/(?:issues|pull)/\d+",
             r"storytold/[a-z]+#\d+",

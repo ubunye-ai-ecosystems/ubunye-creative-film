@@ -20,7 +20,7 @@ on:
         # pinned: the kopanod these installers were tested with (09-product-integration.md, S8)
         default: f5ff0bfd03cfedf945f9e27869b0814bb7c93cf4
   push:
-    branches: [feature/kopano-panel]
+    branches: [feature/kopano-panel, "sync/**"]
     paths:
       - ubunye/packaging/**
       - packaging/**
