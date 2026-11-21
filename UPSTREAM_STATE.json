@@ -7,12 +7,13 @@
     "branch": "main",
     "license": "MIT OR Apache-2.0"
   },
-  "last_checked_at": "2026-11-14T00:00:00Z",
+  "last_checked_at": "2026-11-21T22:00:00Z",
   "last_integrated": {
-    "sha": "7ac54e9727474e9a6ab05ee9c213ae81a01dfe24",
-    "date": "2026-11-14T21:51:08+01:00",
+    "sha": "d6cc257f55e83b16af4be6bf9c371e6798f00af6",
+    "date": "2026-11-21T15:10:17-05:00",
     "upstream_version": "0.17.0",
-    "upstream_tag": "v0.17.0 (+ commits on main)",
+    "upstream_tag": "v0.16.0 (+ commits on main)",
+    "upstream_describe": "v0.16.0-597-gd6cc257f",
     "method": "merge",
     "merged_pr": null,
     "merged_by": null,
@@ -64,6 +65,17 @@
       "ci": "pending",
       "recorded_at": "2026-11-14T00:00:00Z",
       "note": "branch sync/upstream-2026-11-14 (includes the superseded sync/upstream-2026-11-07); upstream CI workflows dropped, upstream flatpak updater test removed; brand rules updated; updater still ours; Ubunye 0.7.2",
+      "merged_pr": null
+    },
+    {
+      "sha": "d6cc257f55e83b16af4be6bf9c371e6798f00af6",
+      "outcome": "merge",
+      "commits": 353,
+      "conflicts": 41,
+      "conflict_hunks": null,
+      "ci": "pending",
+      "recorded_at": "2026-11-21T22:00:00Z",
+      "note": "branch sync/upstream-2026-11-21; brand-only conflicts resolved by re-branding base and upstream and re-merging; upstream release workflow and ArtCraft logo sidecars dropped; control_server keeps our local line loop (empty-token Kopano port); updater still ours; Ubunye 0.7.3",
       "merged_pr": null
     }
   ]
